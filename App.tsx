@@ -7,7 +7,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import AppNavigator from './navigation/AppNavigator';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { initSRSDatabase } from './services/srs';
-
+import { initCurriculumDatabase } from './services/curriculum';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync().catch(console.warn);
@@ -21,7 +21,7 @@ export default function App() {
       try {
         // Initialize SQLite databases
         await initSRSDatabase();
-        
+        await initCurriculumDatabase();
 
         // Fetch onboarding flag
         const onboardingCompleted = await AsyncStorage.getItem('@odia_agent:onboarding_completed');
