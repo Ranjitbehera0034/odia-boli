@@ -8,7 +8,7 @@ import { useThemeColor } from '../hooks/useThemeColor';
 import Theme from '../constants/Theme';
 import { logActivity } from '../services/streak';
 import { getDueCount } from '../services/srs';
-import { getUserProfile } from '../services/curriculum';
+import { checkAndApplyHeartsRefill } from '../services/curriculum';
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
@@ -17,6 +17,7 @@ export default function HomeScreen() {
   const [loading, setLoading] = useState(true);
   const [dueCount, setDueCount] = useState(0);
   const [totalXp, setTotalXp] = useState(0);
+  const [hearts, setHearts] = useState(5);
 
   const cardBackground = useThemeColor({}, 'card');
   const borderCol = useThemeColor({}, 'border');
@@ -34,9 +35,12 @@ export default function HomeScreen() {
     if (isFocused) {
       getDueCount().then(setDueCount).catch(console.error);
       
-      // Load XP from SQLite user profile
-      getUserProfile()
-        .then((profile) => setTotalXp(profile.xp))
+      // Load XP and hearts from SQLite user profile
+      checkAndApplyHeartsRefill()
+        .then((profile) => {
+          setTotalXp(profile.xp);
+          setHearts(profile.hearts);
+        })
         .catch(console.error);
     }
   }, [isFocused]);
@@ -65,8 +69,13 @@ export default function HomeScreen() {
       <RNView style={styles.header}>
         <RNView style={styles.titleRow}>
           <Text style={styles.title}>Odia Agent</Text>
-          <RNView style={[styles.xpBadge, { backgroundColor: '#FBBF2415', borderColor: '#FBBF24' }]}>
-            <Text style={styles.xpText}>🏆 {totalXp} XP</Text>
+          <RNView style={styles.badgeRow}>
+            <RNView style={[styles.xpBadge, { backgroundColor: '#FBBF2415', borderColor: '#FBBF24', marginRight: Theme.spacing.xs }]}>
+              <Text style={styles.xpText}>🏆 {totalXp} XP</Text>
+            </RNView>
+            <RNView style={[styles.xpBadge, { backgroundColor: '#EF444415', borderColor: '#EF4444' }]}>
+              <Text style={[styles.xpText, { color: '#EF4444' }]}>❤️ {hearts}</Text>
+            </RNView>
           </RNView>
         </RNView>
         <Text style={styles.subtitle}>Explore the rich history, art, and heritage of Odisha.</Text>
@@ -128,6 +137,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    backgroundColor: 'transparent',
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: 'transparent',
   },
   xpBadge: {

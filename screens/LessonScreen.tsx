@@ -17,7 +17,7 @@ import Theme from '../constants/Theme';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import * as Speech from 'expo-speech';
 import { CURRICULUM, Exercise, Lesson } from '../services/curriculumData';
-import { completeLesson, getUserProfile, updateUserProfile } from '../services/curriculum';
+import { completeLesson, getUserProfile, updateUserProfile, deductHeart, refillHeartsFull, checkAndApplyHeartsRefill } from '../services/curriculum';
 import { logActivity } from '../services/streak';
 import { isFuzzyMatch, generateWordDiff, DiffWord } from '../services/diff';
 import { getLevelInfo } from '../services/levelSystem';
@@ -58,6 +58,8 @@ export default function LessonScreen() {
   const [currentLevel, setCurrentLevel] = useState(1);
   const [showLevelUpModal, setShowLevelUpModal] = useState(false);
   const [levelUpInfo, setLevelUpInfo] = useState({ oldLevel: 1, newLevel: 2 });
+  const [hearts, setHearts] = useState(5);
+  const [showHeartsModal, setShowHeartsModal] = useState(false);
 
   // Match the pairs state
   const [shuffledOdia, setShuffledOdia] = useState<{ id: string; text: string }[]>([]);
@@ -88,15 +90,20 @@ export default function LessonScreen() {
   const textCol = useThemeColor({}, 'text');
 
   useEffect(() => {
-    // Load user profile from SQLite
+    // Load user profile and hearts from SQLite
     const loadProfile = async () => {
       try {
-        const profile = await getUserProfile();
+        const profile = await checkAndApplyHeartsRefill();
         setTotalXp(profile.xp);
         setCurrentLevel(profile.level);
+        setHearts(profile.hearts);
         
         const info = getLevelInfo(profile.xp);
         xpProgressAnim.setValue(info.progress);
+        
+        if (profile.hearts === 0) {
+          setShowHeartsModal(true);
+        }
       } catch (e) {
         console.error('Failed to load user profile:', e);
       }
@@ -286,6 +293,12 @@ export default function LessonScreen() {
       if (currentExercise.type === 'translate_sentence' || currentExercise.type === 'listen_type') {
         const diff = generateWordDiff(textInputValue, currentExercise.correctAnswer);
         setWordDiffResults(diff);
+      }
+      // Deduct a heart
+      const newHearts = await deductHeart();
+      setHearts(newHearts);
+      if (newHearts === 0) {
+        setShowHeartsModal(true);
       }
     }
 
@@ -818,6 +831,15 @@ export default function LessonScreen() {
             {currentIndex + 1} / {lesson.exercises.length}
           </Text>
         </RNView>
+
+        {/* Hearts display */}
+        <RNView style={styles.heartsContainer}>
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Text key={i} style={styles.heartIcon}>
+              {i < hearts ? '❤️' : '🤍'}
+            </Text>
+          ))}
+        </RNView>
       </RNView>
 
       {/* XP Progress Bar */}
@@ -1043,6 +1065,71 @@ export default function LessonScreen() {
               style={styles.levelUpButton}
             >
               <Text style={styles.levelUpButtonText}>Awesome!</Text>
+            </TouchableOpacity>
+          </RNView>
+        </RNView>
+      </Modal>
+
+      {/* Out of Hearts Modal */}
+      <Modal
+        visible={showHeartsModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => {
+          navigation.goBack();
+        }}
+      >
+        <RNView style={styles.levelUpOverlay}>
+          <RNView style={styles.levelUpCard}>
+            <Text style={styles.heartsEmoji}>💔</Text>
+            <Text style={styles.heartsTitle}>No Hearts Left!</Text>
+            <Text style={styles.levelUpMessage}>
+              You made too many mistakes in this lesson. Watch a quick ad to refill completely, or wait for them to regenerate (30 min / heart).
+            </Text>
+            
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => {
+                Alert.alert(
+                  'Watch Ad Placeholder 📺',
+                  'Watching partner video ad...',
+                  [
+                    {
+                      text: 'Skip Ad',
+                      onPress: async () => {
+                        await refillHeartsFull();
+                        setHearts(5);
+                        setShowHeartsModal(false);
+                      }
+                    }
+                  ]
+                );
+              }}
+              style={[styles.levelUpButton, { backgroundColor: '#10B981', marginBottom: Theme.spacing.md }]}
+            >
+              <Text style={styles.levelUpButtonText}>📺 Watch Ad (Refill Full)</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => {
+                setShowHeartsModal(false);
+                navigation.goBack();
+              }}
+              style={[styles.levelUpButton, { backgroundColor: '#EF4444', marginBottom: Theme.spacing.md }]}
+            >
+              <Text style={styles.levelUpButtonText}>Wait 30 min (Exit)</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => {
+                setShowHeartsModal(false);
+                navigation.goBack();
+              }}
+              style={[styles.levelUpButton, { backgroundColor: '#9CA3AF' }]}
+            >
+              <Text style={styles.levelUpButtonText}>Quit Lesson</Text>
             </TouchableOpacity>
           </RNView>
         </RNView>
@@ -1618,5 +1705,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#FFFFFF',
+  },
+  heartsEmoji: {
+    fontSize: 64,
+    marginBottom: Theme.spacing.md,
+  },
+  heartsTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#EF4444',
+    marginBottom: Theme.spacing.sm,
+  },
+  heartsContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginLeft: Theme.spacing.md,
+    backgroundColor: 'transparent',
+  },
+  heartIcon: {
+    fontSize: 16,
+    marginHorizontal: 1,
   },
 });

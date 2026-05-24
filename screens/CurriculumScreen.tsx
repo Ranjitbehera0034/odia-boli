@@ -21,7 +21,7 @@ import {
   getUnitProgress,
   getOverallCurriculumProgress,
   getLessonProgress,
-  getUserProfile,
+  checkAndApplyHeartsRefill,
   LessonProgress,
   UnitProgress,
 } from '../services/curriculum';
@@ -55,6 +55,7 @@ export default function CurriculumScreen() {
   const [unitProgresses, setUnitProgresses] = useState<Record<number, UnitProgress>>({});
   const [lessonProgresses, setLessonProgresses] = useState<Record<string, LessonProgress>>({});
   const [totalXp, setTotalXp] = useState(0);
+  const [hearts, setHearts] = useState(5);
   
   // Interactive Popover State
   const [selectedLesson, setSelectedLesson] = useState<{ lesson: Lesson; unitId: number; state: LessonState } | null>(null);
@@ -110,9 +111,10 @@ export default function CurriculumScreen() {
       const overall = await getOverallCurriculumProgress();
       setOverallProgress(overall);
 
-      // Load XP from SQLite user profile
-      const profile = await getUserProfile();
+      // Load XP and hearts from SQLite user profile
+      const profile = await checkAndApplyHeartsRefill();
       setTotalXp(profile.xp);
+      setHearts(profile.hearts);
 
       const uProgs: Record<number, UnitProgress> = {};
       const lProgs: Record<string, LessonProgress> = {};
@@ -216,8 +218,11 @@ export default function CurriculumScreen() {
           <RNView style={styles.statusInfoRow}>
             <RNView style={styles.titleWithXpRow}>
               <Text style={styles.statusTitle}>Learning Map Progress</Text>
-              <RNView style={[styles.xpBadge, { backgroundColor: '#FBBF2415', borderColor: '#FBBF24' }]}>
+              <RNView style={[styles.xpBadge, { backgroundColor: '#FBBF2415', borderColor: '#FBBF24', marginRight: Theme.spacing.xs }]}>
                 <Text style={styles.xpText}>🏆 {totalXp} XP</Text>
+              </RNView>
+              <RNView style={[styles.xpBadge, { backgroundColor: '#EF444415', borderColor: '#EF4444' }]}>
+                <Text style={[styles.xpText, { color: '#EF4444' }]}>❤️ {hearts}</Text>
               </RNView>
             </RNView>
             <Text style={[styles.statusPercentage, { color: tintCol }]}>

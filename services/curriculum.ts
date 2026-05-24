@@ -32,6 +32,22 @@ export async function initCurriculumDatabase(): Promise<void> {
     await db.runAsync(`
       INSERT OR IGNORE INTO user_profile (id, xp, level) VALUES (1, 0, 1);
     `);
+
+    // Alter table to add hearts and last_refill_time columns if they don't exist
+    try {
+      await db.execAsync(`
+        ALTER TABLE user_profile ADD COLUMN hearts INTEGER NOT NULL DEFAULT 5;
+      `);
+    } catch (e) {
+      // Column already exists
+    }
+    try {
+      await db.execAsync(`
+        ALTER TABLE user_profile ADD COLUMN last_refill_time INTEGER NOT NULL DEFAULT 0;
+      `);
+    } catch (e) {
+      // Column already exists
+    }
     
     console.log('Curriculum progress and user profile database initialized successfully.');
   } catch (error) {
@@ -190,6 +206,7 @@ export async function resetCurriculumProgress(): Promise<void> {
 export interface UserProfile {
   xp: number;
   level: number;
+  hearts: number;
 }
 
 /**
@@ -198,16 +215,16 @@ export interface UserProfile {
 export async function getUserProfile(): Promise<UserProfile> {
   try {
     const db = getDB();
-    const row = await db.getFirstAsync<{ xp: number; level: number }>(
-      'SELECT xp, level FROM user_profile WHERE id = 1;'
+    const row = await db.getFirstAsync<{ xp: number; level: number; hearts: number }>(
+      'SELECT xp, level, hearts FROM user_profile WHERE id = 1;'
     );
     if (!row) {
-      return { xp: 0, level: 1 };
+      return { xp: 0, level: 1, hearts: 5 };
     }
-    return { xp: row.xp, level: row.level };
+    return { xp: row.xp, level: row.level, hearts: row.hearts ?? 5 };
   } catch (error) {
     console.error('Failed to get user profile from SQLite:', error);
-    return { xp: 0, level: 1 };
+    return { xp: 0, level: 1, hearts: 5 };
   }
 }
 
@@ -228,16 +245,129 @@ export async function updateUserProfile(xp: number, level: number): Promise<void
 }
 
 /**
- * Reset user profile (XP to 0 and Level to 1) in SQLite.
+ * Reset user profile (XP to 0, Level to 1, Hearts to 5, Refill to 0) in SQLite.
  */
 export async function resetUserProfile(): Promise<void> {
   try {
     const db = getDB();
     await db.runAsync(
-      'UPDATE user_profile SET xp = 0, level = 1 WHERE id = 1;'
+      'UPDATE user_profile SET xp = 0, level = 1, hearts = 5, last_refill_time = 0 WHERE id = 1;'
     );
     console.log('User profile reset in SQLite.');
   } catch (error) {
     console.error('Failed to reset user profile in SQLite:', error);
+  }
+}
+
+/**
+ * Deducts 1 heart (down to a minimum of 0).
+ */
+export async function deductHeart(): Promise<number> {
+  try {
+    const db = getDB();
+    const profile = await getUserProfile();
+    if (profile.hearts <= 0) return 0;
+    
+    const newHearts = profile.hearts - 1;
+    const now = Date.now();
+    
+    if (profile.hearts === 5) {
+      // Started regeneration countdown when losing the first heart
+      await db.runAsync(
+        'UPDATE user_profile SET hearts = ?, last_refill_time = ? WHERE id = 1;',
+        [newHearts, now]
+      );
+    } else {
+      await db.runAsync(
+        'UPDATE user_profile SET hearts = ? WHERE id = 1;',
+        [newHearts]
+      );
+    }
+    
+    console.log(`Deducted heart. Hearts remaining: ${newHearts}`);
+    return newHearts;
+  } catch (error) {
+    console.error('Failed to deduct heart:', error);
+    return 0;
+  }
+}
+
+/**
+ * Refills hearts completely back to 5.
+ */
+export async function refillHeartsFull(): Promise<void> {
+  try {
+    const db = getDB();
+    await db.runAsync(
+      'UPDATE user_profile SET hearts = 5, last_refill_time = 0 WHERE id = 1;'
+    );
+    console.log('Hearts refilled completely.');
+  } catch (error) {
+    console.error('Failed to refill hearts:', error);
+  }
+}
+
+/**
+ * Checks elapsed time and applies midnight or 30-minute interval refills.
+ */
+export async function checkAndApplyHeartsRefill(): Promise<UserProfile> {
+  try {
+    const db = getDB();
+    const row = await db.getFirstAsync<{ xp: number; level: number; hearts: number; last_refill_time: number }>(
+      'SELECT xp, level, hearts, last_refill_time FROM user_profile WHERE id = 1;'
+    );
+    if (!row) {
+      return { xp: 0, level: 1, hearts: 5 };
+    }
+
+    const now = Date.now();
+    let hearts = row.hearts ?? 5;
+    let lastRefillTime = row.last_refill_time ?? 0;
+
+    // 1. Check if midnight has passed.
+    if (lastRefillTime > 0) {
+      const lastRefillDate = new Date(lastRefillTime);
+      const nowDate = new Date(now);
+      const passedMidnight = nowDate.getDate() !== lastRefillDate.getDate() || 
+                             nowDate.getMonth() !== lastRefillDate.getMonth() || 
+                             nowDate.getFullYear() !== lastRefillDate.getFullYear();
+
+      if (passedMidnight && now > lastRefillTime) {
+        hearts = 5;
+        lastRefillTime = 0;
+      }
+    }
+
+    // 2. Check 30-minute interval regeneration.
+    if (hearts < 5 && lastRefillTime > 0) {
+      const elapsedMs = now - lastRefillTime;
+      const intervalMs = 30 * 60 * 1000; // 30 minutes
+      
+      if (elapsedMs >= intervalMs) {
+        const heartsToAdd = Math.floor(elapsedMs / intervalMs);
+        const prevHearts = hearts;
+        hearts = Math.min(5, hearts + heartsToAdd);
+        
+        if (hearts === 5) {
+          lastRefillTime = 0;
+        } else {
+          lastRefillTime = lastRefillTime + heartsToAdd * intervalMs;
+        }
+        console.log(`Regenerated ${hearts - prevHearts} hearts. Current: ${hearts}`);
+      }
+    }
+
+    // Update SQLite if values changed
+    if (hearts !== row.hearts || lastRefillTime !== row.last_refill_time) {
+      await db.runAsync(
+        'UPDATE user_profile SET hearts = ?, last_refill_time = ? WHERE id = 1;',
+        [hearts, lastRefillTime]
+      );
+    }
+
+    return { xp: row.xp, level: row.level, hearts };
+  } catch (error) {
+    console.error('Failed to check and apply hearts refill:', error);
+    return { xp: 0, level: 1, hearts: 5 };
   }
 }

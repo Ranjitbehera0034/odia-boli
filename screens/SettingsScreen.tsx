@@ -8,7 +8,7 @@ import Theme from '../constants/Theme';
 import { getStreakStats, getLocalDateString } from '../services/streak';
 import { checkMicrophonePermission, requestMicrophonePermission } from '../services/permissions';
 import { resetSRSDatabase, getDueCount } from '../services/srs';
-import { resetCurriculumProgress, getOverallCurriculumProgress, getUserProfile } from '../services/curriculum';
+import { resetCurriculumProgress, getOverallCurriculumProgress, checkAndApplyHeartsRefill } from '../services/curriculum';
 
 function getPast7Days() {
   const days = [];
@@ -78,8 +78,8 @@ export default function SettingsScreen() {
         setQuizHighScore(0);
       }
 
-      // Load XP from SQLite
-      const profile = await getUserProfile();
+      // Load user profile and hearts from SQLite
+      const profile = await checkAndApplyHeartsRefill();
       setTotalXp(profile.xp);
 
       // Load curriculum map progress
