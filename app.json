@@ -37,6 +37,11 @@
       "expo-splash-screen",
       "expo-dev-client",
       "expo-sqlite"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "c59d6386-7f59-4f65-b40c-d131f172f87c"
+      }
+    }
   }
 }

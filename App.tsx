@@ -8,6 +8,7 @@ import AppNavigator from './navigation/AppNavigator';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { initSRSDatabase } from './services/srs';
 import { initCurriculumDatabase } from './services/curriculum';
+import { StreakProvider } from './services/StreakContext';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync().catch(console.warn);
@@ -53,12 +54,14 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <ErrorBoundary>
-        <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
-          <AppNavigator showOnboarding={showOnboarding} />
-        </View>
-      </ErrorBoundary>
-      <StatusBar style="auto" />
+      <StreakProvider>
+        <ErrorBoundary>
+          <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
+            <AppNavigator showOnboarding={showOnboarding} />
+          </View>
+        </ErrorBoundary>
+        <StatusBar style="auto" />
+      </StreakProvider>
     </SafeAreaProvider>
   );
 }

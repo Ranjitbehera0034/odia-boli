@@ -1,14 +1,15 @@
-import React, { useEffect, useState } from 'react';
-import { StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, View as RNView } from 'react-native';
+import React, { useEffect, useState, useRef } from 'react';
+import { StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, View as RNView, Modal, Animated } from 'react-native';
 import { Text, View } from '../components/Themed';
 import { fetchOdiaItems, OdiaItem } from '../services/api';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { HomeScreenNavigationProp } from '../navigation/types';
 import { useThemeColor } from '../hooks/useThemeColor';
 import Theme from '../constants/Theme';
-import { logActivity } from '../services/streak';
 import { getDueCount } from '../services/srs';
 import { checkAndApplyHeartsRefill } from '../services/curriculum';
+import { useStreak } from '../services/StreakContext';
+import StreakBadge from '../components/StreakBadge';
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
@@ -18,18 +19,35 @@ export default function HomeScreen() {
   const [dueCount, setDueCount] = useState(0);
   const [totalXp, setTotalXp] = useState(0);
   const [hearts, setHearts] = useState(5);
+  const [showSadModal, setShowSadModal] = useState(false);
+
+  const { streak, wasStreakBroken } = useStreak();
+  const sadFadeAnim = useRef(new Animated.Value(0)).current;
+  const sadScaleAnim = useRef(new Animated.Value(0.6)).current;
 
   const cardBackground = useThemeColor({}, 'card');
   const borderCol = useThemeColor({}, 'border');
   const tintCol = useThemeColor({}, 'tint');
 
   useEffect(() => {
-    logActivity().catch(console.error);
     fetchOdiaItems().then((data) => {
       setItems(data);
       setLoading(false);
     });
   }, []);
+
+  // Show sad animation when streak is broken
+  useEffect(() => {
+    if (wasStreakBroken) {
+      setShowSadModal(true);
+      Animated.parallel([
+        Animated.timing(sadFadeAnim, { toValue: 1, duration: 350, useNativeDriver: true }),
+        Animated.spring(sadScaleAnim, { toValue: 1, friction: 5, tension: 70, useNativeDriver: true }),
+      ]).start();
+      // Auto-dismiss after 3s
+      setTimeout(() => setShowSadModal(false), 3000);
+    }
+  }, [wasStreakBroken]);
 
   useEffect(() => {
     if (isFocused) {
@@ -66,10 +84,27 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Sad streak-broken modal */}
+      <Modal transparent visible={showSadModal} animationType="none">
+        <RNView style={styles.sadOverlay}>
+          <Animated.View style={[
+            styles.sadCard,
+            { opacity: sadFadeAnim, transform: [{ scale: sadScaleAnim }] },
+          ]}>
+            <Text style={styles.sadEmoji}>😢</Text>
+            <Text style={styles.sadTitle}>Streak Lost!</Text>
+            <Text style={styles.sadSub}>Your streak has been reset. Start fresh today! 💪</Text>
+            <RNView style={styles.sadStreakReset}>
+              <Text style={styles.sadResetText}>🔥 0</Text>
+            </RNView>
+          </Animated.View>
+        </RNView>
+      </Modal>
       <RNView style={styles.header}>
         <RNView style={styles.titleRow}>
           <Text style={styles.title}>Odia Agent</Text>
           <RNView style={styles.badgeRow}>
+            <StreakBadge onPress={() => (navigation as any).navigate('Settings')} />
             <RNView style={[styles.xpBadge, { backgroundColor: '#FBBF2415', borderColor: '#FBBF24', marginRight: Theme.spacing.xs }]}>
               <Text style={styles.xpText}>🏆 {totalXp} XP</Text>
             </RNView>
@@ -251,5 +286,53 @@ const styles = StyleSheet.create({
     color: '#10B981',
     fontWeight: Theme.typography.fontWeight.semibold,
     textAlign: 'center',
+  },
+  sadOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sadCard: {
+    backgroundColor: '#1F2937',
+    borderRadius: 24,
+    padding: 32,
+    alignItems: 'center',
+    width: 280,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    elevation: 12,
+  },
+  sadEmoji: {
+    fontSize: 56,
+    marginBottom: 12,
+  },
+  sadTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#F9FAFB',
+    marginBottom: 8,
+  },
+  sadSub: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 20,
+  },
+  sadStreakReset: {
+    backgroundColor: '#EF444420',
+    borderWidth: 1.5,
+    borderColor: '#EF4444',
+    borderRadius: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+  },
+  sadResetText: {
+    fontSize: 22,
+    fontWeight: '900',
+    color: '#EF4444',
   },
 });

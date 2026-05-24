@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Switch, TouchableOpacity, ScrollView, View as RNView } from 'react-native';
+import { StyleSheet, Switch, TouchableOpacity, ScrollView, View as RNView, Alert, Animated } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused } from '@react-navigation/native';
 import { Text, View } from '../components/Themed';
 import { useThemeColor } from '../hooks/useThemeColor';
 import Theme from '../constants/Theme';
-import { getStreakStats, getLocalDateString } from '../services/streak';
+import { getLocalDateString, buyStreakFreeze, STREAK_FREEZE_COST } from '../services/streak';
 import { checkMicrophonePermission, requestMicrophonePermission } from '../services/permissions';
 import { resetSRSDatabase, getDueCount } from '../services/srs';
-import { resetCurriculumProgress, getOverallCurriculumProgress, checkAndApplyHeartsRefill } from '../services/curriculum';
+import { resetCurriculumProgress, getOverallCurriculumProgress, checkAndApplyHeartsRefill, updateUserProfile } from '../services/curriculum';
+import { useStreak } from '../services/StreakContext';
 
 function getPast7Days() {
   const days = [];
@@ -24,8 +25,7 @@ function getPast7Days() {
 
 export default function SettingsScreen() {
   const isFocused = useIsFocused();
-  const [streak, setStreak] = useState(0);
-  const [activityDates, setActivityDates] = useState<string[]>([]);
+  const { streak, streakFreezeCount, activityDates, freezeUsedDates, refreshStreak } = useStreak();
   const [totalLearned, setTotalLearned] = useState(0);
   const [totalSaved, setTotalSaved] = useState(0);
   const [quizzesTaken, setQuizzesTaken] = useState(0);
@@ -33,6 +33,7 @@ export default function SettingsScreen() {
   const [totalXp, setTotalXp] = useState(0);
   const [mapProgressPercent, setMapProgressPercent] = useState(0);
   const [srsDueCount, setSrsDueCount] = useState(0);
+  const [buyingFreeze, setBuyingFreeze] = useState(false);
 
   const [notifications, setNotifications] = useState(true);
   const [offlineMode, setOfflineMode] = useState(false);
@@ -50,10 +51,6 @@ export default function SettingsScreen() {
 
   const loadStats = async () => {
     try {
-      const stats = await getStreakStats();
-      setStreak(stats.currentStreak);
-      setActivityDates(stats.activityDates);
-
       const learned = await AsyncStorage.getItem('@odia_agent:learned_phrases');
       if (learned) {
         setTotalLearned(JSON.parse(learned).length);
@@ -103,6 +100,46 @@ export default function SettingsScreen() {
     if (!status.granted) {
       alert('Microphone permission is required to enable voice recording. Please enable it in your device settings.');
     }
+  };
+
+  const handleBuyStreakFreeze = async () => {
+    if (totalXp < STREAK_FREEZE_COST) {
+      Alert.alert(
+        'Not Enough XP',
+        `You need ${STREAK_FREEZE_COST} XP to buy a Streak Freeze. You have ${totalXp} XP.`,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    Alert.alert(
+      '🧊 Buy Streak Freeze?',
+      `Spend ${STREAK_FREEZE_COST} XP to protect your streak for one missed day?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Buy',
+          onPress: async () => {
+            setBuyingFreeze(true);
+            try {
+              // Deduct XP from user profile
+              const profile = await checkAndApplyHeartsRefill();
+              const newXp = Math.max(0, profile.xp - STREAK_FREEZE_COST);
+              const { getLevelInfo } = require('../services/levelSystem');
+              const levelInfo = getLevelInfo(newXp);
+              await updateUserProfile(newXp, levelInfo.level);
+              await buyStreakFreeze();
+              await refreshStreak();
+              await loadStats();
+              Alert.alert('🧊 Streak Freeze Added!', 'Your streak is protected for one missed day.');
+            } catch (e) {
+              console.error(e);
+            } finally {
+              setBuyingFreeze(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleResetStats = async () => {
@@ -217,24 +254,62 @@ export default function SettingsScreen() {
           </RNView>
         </RNView>
 
-        {/* Heatmap Grid */}
-        <Text style={styles.heatmapTitle}>Activity Heatmap (Past 7 Days)</Text>
+        {/* Heatmap / Streak Calendar */}
+        <Text style={styles.heatmapTitle}>7-Day Streak Calendar</Text>
         <RNView style={styles.heatmapGrid}>
           {getPast7Days().map((day) => {
             const isActive = activityDates.includes(day.dateStr);
+            const isFreezeDay = freezeUsedDates.includes(day.dateStr);
+            const isToday = day.dateStr === getLocalDateString();
+            let icon = '⚫';
+            let bgColor = borderCol + '30';
+            let borderColor = borderCol;
+            if (isActive) { icon = '🔥'; bgColor = '#EF444420'; borderColor = '#EF4444'; }
+            else if (isFreezeDay) { icon = '🧊'; bgColor = '#3B82F620'; borderColor = '#3B82F6'; }
             return (
               <RNView key={day.dateStr} style={styles.heatmapDay}>
                 <RNView
                   style={[
                     styles.heatmapSquare,
-                    { borderColor: borderCol },
-                    isActive && { backgroundColor: tintCol, borderColor: tintCol },
+                    { backgroundColor: bgColor, borderColor },
+                    isToday && styles.heatmapToday,
                   ]}
-                />
-                <Text style={styles.heatmapDayLabel}>{day.dayLabel}</Text>
+                >
+                  <Text style={styles.heatmapIcon}>{icon}</Text>
+                </RNView>
+                <Text style={[styles.heatmapDayLabel, isToday && { color: tintCol, fontWeight: '700' }]}>{day.dayLabel}</Text>
               </RNView>
             );
           })}
+        </RNView>
+
+        {/* Streak Freeze Shop */}
+        <RNView style={[styles.freezeShop, { borderColor: '#3B82F640', backgroundColor: '#3B82F608' }]}>
+          <RNView style={styles.freezeShopHeader}>
+            <Text style={styles.freezeShopTitle}>🧊 Streak Freeze</Text>
+            <RNView style={[styles.freezeCountPill, { backgroundColor: '#3B82F620', borderColor: '#3B82F6' }]}>
+              <Text style={styles.freezeCountText}>×{streakFreezeCount}</Text>
+            </RNView>
+          </RNView>
+          <Text style={styles.freezeShopDesc}>
+            Automatically protects your streak for one missed day. Auto-applied when you lose a streak.
+          </Text>
+          <TouchableOpacity
+            activeOpacity={0.8}
+            style={[
+              styles.freezeBuyBtn,
+              {
+                backgroundColor: totalXp >= STREAK_FREEZE_COST ? '#3B82F6' : '#9CA3AF',
+                opacity: buyingFreeze ? 0.6 : 1,
+              },
+            ]}
+            onPress={handleBuyStreakFreeze}
+            disabled={buyingFreeze}
+          >
+            <Text style={styles.freezeBuyText}>
+              {buyingFreeze ? 'Buying...' : `Buy Freeze  —  ${STREAK_FREEZE_COST} XP`}
+            </Text>
+          </TouchableOpacity>
         </RNView>
       </RNView>
 
@@ -429,20 +504,73 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     width: '100%',
+    marginBottom: Theme.spacing.lg,
   },
   heatmapDay: {
     alignItems: 'center',
   },
   heatmapSquare: {
-    width: 28,
-    height: 28,
-    borderWidth: 1,
-    borderRadius: Theme.borderRadius.xs + 2,
+    width: 36,
+    height: 36,
+    borderWidth: 1.5,
+    borderRadius: Theme.borderRadius.sm,
     marginBottom: Theme.spacing.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heatmapToday: {
+    borderWidth: 2.5,
+  },
+  heatmapIcon: {
+    fontSize: 16,
   },
   heatmapDayLabel: {
     fontSize: 10,
     color: '#6B7280',
+  },
+  freezeShop: {
+    borderWidth: 1,
+    borderRadius: Theme.borderRadius.md,
+    padding: Theme.spacing.md,
+    marginTop: Theme.spacing.sm,
+  },
+  freezeShopHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  freezeShopTitle: {
+    fontSize: Theme.typography.fontSize.md,
+    fontWeight: Theme.typography.fontWeight.bold,
+    color: '#3B82F6',
+  },
+  freezeCountPill: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 2,
+  },
+  freezeCountText: {
+    fontSize: Theme.typography.fontSize.sm,
+    fontWeight: '800',
+    color: '#3B82F6',
+  },
+  freezeShopDesc: {
+    fontSize: Theme.typography.fontSize.xs,
+    color: '#6B7280',
+    lineHeight: 18,
+    marginBottom: Theme.spacing.md,
+  },
+  freezeBuyBtn: {
+    borderRadius: Theme.borderRadius.sm,
+    paddingVertical: Theme.spacing.sm,
+    alignItems: 'center',
+  },
+  freezeBuyText: {
+    fontSize: Theme.typography.fontSize.sm,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   permissionButton: {
     borderWidth: 1,
