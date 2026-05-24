@@ -17,7 +17,7 @@ import QuizScreen from '../screens/QuizScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import OnboardingScreen from '../screens/OnboardingScreen';
 import CurriculumScreen from '../screens/CurriculumScreen';
-
+import LessonScreen from '../screens/LessonScreen';
 import { MainTabParamList, RootStackParamList } from './types';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
@@ -176,7 +176,11 @@ export default function AppNavigator({ showOnboarding }: { showOnboarding: boole
           component={CurriculumScreen}
           options={{ title: 'Learning Path', headerBackTitle: '' }}
         />
-        
+        <Stack.Screen
+          name="Lesson"
+          component={LessonScreen}
+          options={{ headerShown: false }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );

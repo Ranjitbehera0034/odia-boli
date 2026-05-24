@@ -18,7 +18,7 @@ export type RootStackParamList = {
   History: undefined;
   Onboarding: undefined;
   Curriculum: undefined;
-  
+  Lesson: { lessonId: string };
 };
 
 export type HomeScreenNavigationProp = CompositeNavigationProp<
