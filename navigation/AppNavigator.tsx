@@ -1,5 +1,6 @@
 import React from 'react';
 import { useColorScheme, Text, TouchableOpacity } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { DefaultTheme, DarkTheme, NavigationContainer } from '@react-navigation/native';
@@ -26,6 +27,11 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 function TabNavigator() {
   const activeColor = useThemeColor({}, 'tint');
   const inactiveColor = useThemeColor({}, 'icon');
+  const insets = useSafeAreaInsets();
+
+  // Add system nav bar inset so tab bar clears the Android gesture/button bar
+  const TAB_BAR_INNER_HEIGHT = 52;
+  const tabBarHeight = TAB_BAR_INNER_HEIGHT + insets.bottom;
 
   return (
     <Tab.Navigator
@@ -36,9 +42,9 @@ function TabNavigator() {
           borderTopWidth: 1,
           elevation: 8,
           shadowOpacity: 0.1,
-          height: 60,
-          paddingBottom: 8,
-          paddingTop: 8,
+          height: tabBarHeight,
+          paddingBottom: insets.bottom + 4,
+          paddingTop: 6,
         },
         tabBarLabelStyle: {
           fontSize: 12,
