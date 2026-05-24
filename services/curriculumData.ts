@@ -97,6 +97,12 @@ export const CURRICULUM: Unit[] = [
             type: "translate_sentence",
             prompt: "ଆପଣ କେମିତି ଅଛନ୍ତି?",
             correctAnswer: "How are you?"
+          },
+          {
+            id: "u1_l1_ex10",
+            type: "listen_type",
+            prompt: "Listen and type what you hear",
+            correctAnswer: "How are you?"
           }
         ]
       },
@@ -167,6 +173,12 @@ export const CURRICULUM: Unit[] = [
             type: "translate_sentence",
             prompt: "ମୋର ନାମ ରଞ୍ଜିତ ।",
             correctAnswer: "My name is Ranjit"
+          },
+          {
+            id: "u1_l2_ex10",
+            type: "listen_type",
+            prompt: "Listen and type what you hear",
+            correctAnswer: "See you again"
           }
         ]
       }
@@ -244,6 +256,12 @@ export const CURRICULUM: Unit[] = [
             type: "translate_sentence",
             prompt: "ଏକ ଦୁଇ ତିନି",
             correctAnswer: "One two three"
+          },
+          {
+            id: "u2_l1_ex10",
+            type: "listen_type",
+            prompt: "Listen and type what you hear",
+            correctAnswer: "Three and four"
           }
         ]
       },
@@ -313,6 +331,12 @@ export const CURRICULUM: Unit[] = [
             id: "u2_l2_ex9",
             type: "translate_sentence",
             prompt: "ଆଠ ଏବଂ ନଅ",
+            correctAnswer: "Eight and nine"
+          },
+          {
+            id: "u2_l2_ex10",
+            type: "listen_type",
+            prompt: "Listen and type what you hear",
             correctAnswer: "Eight and nine"
           }
         ]
@@ -391,6 +415,12 @@ export const CURRICULUM: Unit[] = [
             type: "translate_sentence",
             prompt: "ସେ ମୋର ଭାଇ ଅଟନ୍ତି ।",
             correctAnswer: "He is my brother"
+          },
+          {
+            id: "u3_l1_ex10",
+            type: "listen_type",
+            prompt: "Listen and type what you hear",
+            correctAnswer: "Mother and father"
           }
         ]
       },
@@ -461,6 +491,12 @@ export const CURRICULUM: Unit[] = [
             type: "translate_sentence",
             prompt: "ଏହା ମୋର ପୁଅ ।",
             correctAnswer: "This is my son"
+          },
+          {
+            id: "u3_l2_ex10",
+            type: "listen_type",
+            prompt: "Listen and type what you hear",
+            correctAnswer: "She is my daughter"
           }
         ]
       }
@@ -538,6 +574,12 @@ export const CURRICULUM: Unit[] = [
             type: "translate_sentence",
             prompt: "ଭାତ ଏବଂ ପାଣି",
             correctAnswer: "Rice and water"
+          },
+          {
+            id: "u4_l1_ex10",
+            type: "listen_type",
+            prompt: "Listen and type what you hear",
+            correctAnswer: "Rice and water"
           }
         ]
       },
@@ -608,6 +650,12 @@ export const CURRICULUM: Unit[] = [
             type: "translate_sentence",
             prompt: "ମତେ ଖାଦ୍ୟ ଦରକାର ।",
             correctAnswer: "I want food"
+          },
+          {
+            id: "u4_l2_ex10",
+            type: "listen_type",
+            prompt: "Listen and type what you hear",
+            correctAnswer: "I want water"
           }
         ]
       }
@@ -685,6 +733,12 @@ export const CURRICULUM: Unit[] = [
             type: "translate_sentence",
             prompt: "ଡାହାଣକୁ ଯାଅ ।",
             correctAnswer: "Go right"
+          },
+          {
+            id: "u5_l1_ex10",
+            type: "listen_type",
+            prompt: "Listen and type what you hear",
+            correctAnswer: "Turn left"
           }
         ]
       },
@@ -754,6 +808,12 @@ export const CURRICULUM: Unit[] = [
             id: "u5_l2_ex9",
             type: "translate_sentence",
             prompt: "ହୋଟେଲ କେଉଁଠି ଅଛି?",
+            correctAnswer: "Where is the hotel?"
+          },
+          {
+            id: "u5_l2_ex10",
+            type: "listen_type",
+            prompt: "Listen and type what you hear",
             correctAnswer: "Where is the hotel?"
           }
         ]

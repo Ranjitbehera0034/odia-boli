@@ -554,7 +554,38 @@ export default function LessonScreen() {
         );
 
       case 'listen_type':
-        return null;
+        return (
+          <RNView style={styles.listenTypeContainer}>
+            <RNView style={styles.speakerRow}>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => playTTS(currentExercise.correctAnswer, 'en')}
+                style={[styles.bigSpeakerBtn, { backgroundColor: tintCol }]}
+              >
+                <Text style={styles.bigSpeakerText}>🔊 Replay Audio</Text>
+              </TouchableOpacity>
+            </RNView>
+
+            <TextInput
+              multiline
+              value={textInputValue}
+              editable={!isAnswerChecked}
+              onChangeText={setTextInputValue}
+              placeholder="Type what you hear (in English)..."
+              placeholderTextColor="#9CA3AF"
+              style={[
+                styles.translationInput,
+                { 
+                  color: textCol, 
+                  backgroundColor: cardCol, 
+                  borderColor: isAnswerChecked 
+                    ? (isAnswerCorrect ? '#10B981' : '#EF4444') 
+                    : borderCol 
+                }
+              ]}
+            />
+          </RNView>
+        );
 
       case 'match_pairs':
         return null;
