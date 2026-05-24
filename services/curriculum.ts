@@ -18,8 +18,22 @@ export async function initCurriculumDatabase(): Promise<void> {
         completed_at INTEGER
       );
     `);
+
+    // Create user profile table
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS user_profile (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        xp INTEGER NOT NULL DEFAULT 0,
+        level INTEGER NOT NULL DEFAULT 1
+      );
+    `);
     
-    console.log('Curriculum progress database initialized successfully.');
+    // Seed default user profile if empty
+    await db.runAsync(`
+      INSERT OR IGNORE INTO user_profile (id, xp, level) VALUES (1, 0, 1);
+    `);
+    
+    console.log('Curriculum progress and user profile database initialized successfully.');
   } catch (error) {
     console.error('Failed to initialize curriculum database:', error);
   }
@@ -166,8 +180,64 @@ export async function resetCurriculumProgress(): Promise<void> {
   try {
     const db = getDB();
     await db.runAsync('DELETE FROM lesson_progress;');
+    await resetUserProfile();
     console.log('Curriculum progress reset successfully.');
   } catch (error) {
     console.error('Failed to reset curriculum progress:', error);
+  }
+}
+
+export interface UserProfile {
+  xp: number;
+  level: number;
+}
+
+/**
+ * Retrieve current user profile (XP and Level) from SQLite.
+ */
+export async function getUserProfile(): Promise<UserProfile> {
+  try {
+    const db = getDB();
+    const row = await db.getFirstAsync<{ xp: number; level: number }>(
+      'SELECT xp, level FROM user_profile WHERE id = 1;'
+    );
+    if (!row) {
+      return { xp: 0, level: 1 };
+    }
+    return { xp: row.xp, level: row.level };
+  } catch (error) {
+    console.error('Failed to get user profile from SQLite:', error);
+    return { xp: 0, level: 1 };
+  }
+}
+
+/**
+ * Update user profile (XP and Level) in SQLite.
+ */
+export async function updateUserProfile(xp: number, level: number): Promise<void> {
+  try {
+    const db = getDB();
+    await db.runAsync(
+      'UPDATE user_profile SET xp = ?, level = ? WHERE id = 1;',
+      [xp, level]
+    );
+    console.log(`User profile updated in SQLite: XP=${xp}, Level=${level}`);
+  } catch (error) {
+    console.error('Failed to update user profile in SQLite:', error);
+  }
+}
+
+/**
+ * Reset user profile (XP to 0 and Level to 1) in SQLite.
+ */
+export async function resetUserProfile(): Promise<void> {
+  try {
+    const db = getDB();
+    await db.runAsync(
+      'UPDATE user_profile SET xp = 0, level = 1 WHERE id = 1;'
+    );
+    console.log('User profile reset in SQLite.');
+  } catch (error) {
+    console.error('Failed to reset user profile in SQLite:', error);
   }
 }

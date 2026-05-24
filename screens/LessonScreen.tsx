@@ -9,17 +9,19 @@ import {
   Animated,
   Dimensions,
   Platform,
+  Modal,
 } from 'react-native';
 import { Text, View } from '../components/Themed';
 import { useThemeColor } from '../hooks/useThemeColor';
 import Theme from '../constants/Theme';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import * as Speech from 'expo-speech';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CURRICULUM, Exercise, Lesson } from '../services/curriculumData';
-import { completeLesson } from '../services/curriculum';
+import { completeLesson, getUserProfile, updateUserProfile } from '../services/curriculum';
 import { logActivity } from '../services/streak';
 import { isFuzzyMatch, generateWordDiff, DiffWord } from '../services/diff';
+import { getLevelInfo } from '../services/levelSystem';
+import LottieView from 'lottie-react-native';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -53,6 +55,9 @@ export default function LessonScreen() {
   const [wordDiffResults, setWordDiffResults] = useState<DiffWord[]>([]);
   const [earnedXp, setEarnedXp] = useState(0);
   const [totalXp, setTotalXp] = useState(0);
+  const [currentLevel, setCurrentLevel] = useState(1);
+  const [showLevelUpModal, setShowLevelUpModal] = useState(false);
+  const [levelUpInfo, setLevelUpInfo] = useState({ oldLevel: 1, newLevel: 2 });
 
   // Match the pairs state
   const [shuffledOdia, setShuffledOdia] = useState<{ id: string; text: string }[]>([]);
@@ -68,6 +73,14 @@ export default function LessonScreen() {
   // Animations
   const slideAnim = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const shakeAnim = useRef(new Animated.Value(0)).current;
+  const matchScaleAnims = [
+    useRef(new Animated.Value(1)).current,
+    useRef(new Animated.Value(1)).current,
+    useRef(new Animated.Value(1)).current,
+    useRef(new Animated.Value(1)).current,
+  ];
+  const xpProgressAnim = useRef(new Animated.Value(0)).current;
 
   const cardCol = useThemeColor({}, 'card');
   const borderCol = useThemeColor({}, 'border');
@@ -75,18 +88,20 @@ export default function LessonScreen() {
   const textCol = useThemeColor({}, 'text');
 
   useEffect(() => {
-    // Load XP from AsyncStorage
-    const loadXp = async () => {
+    // Load user profile from SQLite
+    const loadProfile = async () => {
       try {
-        const storedXp = await AsyncStorage.getItem('@odia_agent:total_xp');
-        if (storedXp) {
-          setTotalXp(parseInt(storedXp));
-        }
+        const profile = await getUserProfile();
+        setTotalXp(profile.xp);
+        setCurrentLevel(profile.level);
+        
+        const info = getLevelInfo(profile.xp);
+        xpProgressAnim.setValue(info.progress);
       } catch (e) {
-        console.error('Failed to load XP:', e);
+        console.error('Failed to load user profile:', e);
       }
     };
-    loadXp();
+    loadProfile();
 
     // Find lesson from static CURRICULUM data
     let foundLesson: Lesson | null = null;
@@ -196,7 +211,46 @@ export default function LessonScreen() {
     );
   };
 
-  const handleCheckAnswer = () => {
+  const updateXpAndLevel = async (amount: number) => {
+    try {
+      const currentXp = totalXp;
+      const newXp = currentXp + amount;
+      const oldInfo = getLevelInfo(currentXp);
+      const newInfo = getLevelInfo(newXp);
+      
+      setTotalXp(newXp);
+      await updateUserProfile(newXp, newInfo.level);
+      
+      if (newInfo.level > oldInfo.level) {
+        setLevelUpInfo({ oldLevel: oldInfo.level, newLevel: newInfo.level });
+        setShowLevelUpModal(true);
+        setCurrentLevel(newInfo.level);
+        
+        Animated.timing(xpProgressAnim, {
+          toValue: 1.0,
+          duration: 400,
+          useNativeDriver: false,
+        }).start(() => {
+          xpProgressAnim.setValue(0);
+          Animated.timing(xpProgressAnim, {
+            toValue: newInfo.progress,
+            duration: 400,
+            useNativeDriver: false,
+          }).start();
+        });
+      } else {
+        Animated.timing(xpProgressAnim, {
+          toValue: newInfo.progress,
+          duration: 400,
+          useNativeDriver: false,
+        }).start();
+      }
+    } catch (err) {
+      console.error('Failed to update XP and Level:', err);
+    }
+  };
+
+  const handleCheckAnswer = async () => {
     if (isAnswerChecked) return;
 
     let correct = false;
@@ -227,9 +281,7 @@ export default function LessonScreen() {
       // Award +10 XP immediately
       const newEarned = earnedXp + 10;
       setEarnedXp(newEarned);
-      const newTotal = totalXp + 10;
-      setTotalXp(newTotal);
-      AsyncStorage.setItem('@odia_agent:total_xp', newTotal.toString()).catch(console.error);
+      await updateXpAndLevel(10);
     } else {
       if (currentExercise.type === 'translate_sentence' || currentExercise.type === 'listen_type') {
         const diff = generateWordDiff(textInputValue, currentExercise.correctAnswer);
@@ -250,25 +302,16 @@ export default function LessonScreen() {
       setCurrentIndex((prev) => prev + 1);
     } else {
       // Completed last exercise! Save progress to SQLite
-      const lastCorrect = isAnswerCorrect;
-      const finalScore = score + (lastCorrect ? 1 : 0);
-      setScore(finalScore);
+      const isPerfect = score === lesson.exercises.length;
       
-      let finalEarnedXp = earnedXp + (lastCorrect ? 10 : 0);
-      let newTotalXp = totalXp + (lastCorrect ? 10 : 0);
-      
-      // Perfect Score Bonus
-      if (finalScore === lesson.exercises.length) {
-        finalEarnedXp += 50;
-        newTotalXp += 50;
+      if (isPerfect) {
+        const finalEarnedXp = earnedXp + 20; // 20 XP perfect lesson bonus
+        setEarnedXp(finalEarnedXp);
+        await updateXpAndLevel(20);
       }
-      
-      setEarnedXp(finalEarnedXp);
-      setTotalXp(newTotalXp);
-      await AsyncStorage.setItem('@odia_agent:total_xp', newTotalXp.toString()).catch(console.error);
 
       // Save stats to DB
-      await completeLesson(lesson.id, unitId, finalScore);
+      await completeLesson(lesson.id, unitId, score);
       await logActivity().catch(console.error);
 
       setShowCelebration(true);
@@ -338,23 +381,17 @@ export default function LessonScreen() {
         toValue: 0,
         duration: 350,
         useNativeDriver: true,
-      }).start(() => {
-        setMatchedPairs(prev => {
-          const updated = [...prev, odiaWord];
-          if (updated.length === 4) {
-            setIsAnswerCorrect(true);
-            setIsAnswerChecked(true);
-            setScore(s => s + 1);
-            // Award XP
-            setEarnedXp(e => e + 10);
-            setTotalXp(t => {
-              const newTotal = t + 10;
-              AsyncStorage.setItem('@odia_agent:total_xp', newTotal.toString()).catch(console.error);
-              return newTotal;
-            });
-          }
-          return updated;
-        });
+      }).start(async () => {
+        const nextPairs = [...matchedPairs, odiaWord];
+        setMatchedPairs(nextPairs);
+        
+        if (nextPairs.length === 4) {
+          setIsAnswerCorrect(true);
+          setIsAnswerChecked(true);
+          setScore(s => s + 1);
+          setEarnedXp(e => e + 10);
+          await updateXpAndLevel(10);
+        }
         
         setSelectedOdia(null);
         setSelectedEnglish(null);
@@ -728,7 +765,7 @@ export default function LessonScreen() {
             <Text style={[styles.celebXpValue, { color: '#E2B13C' }]}>+ {earnedXp} XP</Text>
           </RNView>
           {score === lesson.exercises.length && (
-            <Text style={styles.celebXpBonusText}>✨ Includes +50 XP Perfect Lesson Bonus! ✨</Text>
+            <Text style={styles.celebXpBonusText}>✨ Includes +20 XP Perfect Lesson Bonus! ✨</Text>
           )}
 
           <Text style={[styles.motivationText, { marginTop: Theme.spacing.md }]}>
@@ -781,6 +818,27 @@ export default function LessonScreen() {
             {currentIndex + 1} / {lesson.exercises.length}
           </Text>
         </RNView>
+      </RNView>
+
+      {/* XP Progress Bar */}
+      <RNView style={styles.xpRowContainer}>
+        <Text style={styles.xpLevelBadge}>Lvl {currentLevel}</Text>
+        <RNView style={styles.xpProgressBg}>
+          <Animated.View
+            style={[
+              styles.xpProgressFill,
+              {
+                width: xpProgressAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: ['0%', '100%'],
+                }),
+              },
+            ]}
+          />
+        </RNView>
+        <Text style={styles.xpText}>
+          {totalXp - getLevelInfo(totalXp).minXp} / {getLevelInfo(totalXp).maxXp - getLevelInfo(totalXp).minXp} XP
+        </Text>
       </RNView>
 
       <ScrollView style={styles.scrollContainer} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
@@ -942,6 +1000,53 @@ export default function LessonScreen() {
           </RNView>
         )}
       </RNView>
+
+      {/* Level Up Celebration Modal */}
+      <Modal
+        visible={showLevelUpModal}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowLevelUpModal(false)}
+      >
+        <RNView style={styles.levelUpOverlay}>
+          <LottieView
+            source={require('../assets/confetti.json')}
+            autoPlay
+            loop={false}
+            style={styles.lottieConfetti}
+          />
+          
+          <RNView style={styles.levelUpCard}>
+            <Text style={styles.levelUpEmoji}>🏆</Text>
+            <Text style={styles.levelUpTitle}>Level Up!</Text>
+            <Text style={styles.levelUpSubtitle}>
+              You reached Level {levelUpInfo.newLevel}
+            </Text>
+            
+            <RNView style={styles.levelUpProgressRow}>
+              <RNView style={styles.levelBadgeOutline}>
+                <Text style={styles.levelBadgeOutlineText}>{levelUpInfo.oldLevel}</Text>
+              </RNView>
+              <Text style={styles.levelUpArrow}>→</Text>
+              <RNView style={[styles.levelBadgeOutline, styles.levelBadgeActive]}>
+                <Text style={[styles.levelBadgeOutlineText, styles.levelBadgeActiveText]}>{levelUpInfo.newLevel}</Text>
+              </RNView>
+            </RNView>
+            
+            <Text style={styles.levelUpMessage}>
+              Your dedication is paying off! Keep up the excellent work learning Odia!
+            </Text>
+            
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={() => setShowLevelUpModal(false)}
+              style={styles.levelUpButton}
+            >
+              <Text style={styles.levelUpButtonText}>Awesome!</Text>
+            </TouchableOpacity>
+          </RNView>
+        </RNView>
+      </Modal>
     </View>
   );
 }
@@ -1379,5 +1484,139 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
     paddingHorizontal: Theme.spacing.xs,
+  },
+  xpRowContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: Theme.spacing.lg,
+    backgroundColor: '#FFFBEB',
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#FDE68A',
+  },
+  xpLevelBadge: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#D97706',
+    marginRight: Theme.spacing.xs,
+  },
+  xpProgressBg: {
+    flex: 1,
+    height: 6,
+    backgroundColor: '#FEF3C7',
+    borderRadius: 3,
+    overflow: 'hidden',
+    marginRight: Theme.spacing.md,
+  },
+  xpProgressFill: {
+    height: '100%',
+    backgroundColor: '#F59E0B',
+    borderRadius: 3,
+  },
+  xpText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#B45309',
+    minWidth: 70,
+    textAlign: 'right',
+  },
+  levelUpOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Theme.spacing.xl,
+  },
+  lottieConfetti: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    pointerEvents: 'none',
+  },
+  levelUpCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 32,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 340,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  levelUpEmoji: {
+    fontSize: 64,
+    marginBottom: Theme.spacing.md,
+  },
+  levelUpTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#D97706',
+    marginBottom: Theme.spacing.xs,
+  },
+  levelUpSubtitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: Theme.spacing.lg,
+  },
+  levelUpProgressRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Theme.spacing.lg,
+    backgroundColor: 'transparent',
+  },
+  levelBadgeOutline: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 2,
+    borderColor: '#D1D5DB',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F3F4F6',
+  },
+  levelBadgeOutlineText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#6B7280',
+  },
+  levelBadgeActive: {
+    borderColor: '#F59E0B',
+    backgroundColor: '#FEF3C7',
+  },
+  levelBadgeActiveText: {
+    color: '#D97706',
+  },
+  levelUpArrow: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#9CA3AF',
+    marginHorizontal: Theme.spacing.md,
+  },
+  levelUpMessage: {
+    fontSize: 14,
+    color: '#4B5563',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: Theme.spacing.xl,
+  },
+  levelUpButton: {
+    backgroundColor: '#F59E0B',
+    paddingVertical: Theme.spacing.md,
+    paddingHorizontal: Theme.spacing.xl,
+    borderRadius: Theme.borderRadius.round,
+    width: '100%',
+    alignItems: 'center',
+  },
+  levelUpButtonText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
   },
 });

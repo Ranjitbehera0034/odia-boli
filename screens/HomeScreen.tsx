@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, FlatList, TouchableOpacity, ActivityIndicator, View as RNView } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Text, View } from '../components/Themed';
 import { fetchOdiaItems, OdiaItem } from '../services/api';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
@@ -9,6 +8,7 @@ import { useThemeColor } from '../hooks/useThemeColor';
 import Theme from '../constants/Theme';
 import { logActivity } from '../services/streak';
 import { getDueCount } from '../services/srs';
+import { getUserProfile } from '../services/curriculum';
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
@@ -34,9 +34,9 @@ export default function HomeScreen() {
     if (isFocused) {
       getDueCount().then(setDueCount).catch(console.error);
       
-      // Load XP
-      AsyncStorage.getItem('@odia_agent:total_xp')
-        .then((storedXp) => setTotalXp(storedXp ? parseInt(storedXp) : 0))
+      // Load XP from SQLite user profile
+      getUserProfile()
+        .then((profile) => setTotalXp(profile.xp))
         .catch(console.error);
     }
   }, [isFocused]);

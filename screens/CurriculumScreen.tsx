@@ -12,7 +12,6 @@ import {
   Platform,
   Alert,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Text, View } from '../components/Themed';
 import { useThemeColor } from '../hooks/useThemeColor';
 import Theme from '../constants/Theme';
@@ -22,6 +21,7 @@ import {
   getUnitProgress,
   getOverallCurriculumProgress,
   getLessonProgress,
+  getUserProfile,
   LessonProgress,
   UnitProgress,
 } from '../services/curriculum';
@@ -110,9 +110,9 @@ export default function CurriculumScreen() {
       const overall = await getOverallCurriculumProgress();
       setOverallProgress(overall);
 
-      // Load XP from storage
-      const storedXp = await AsyncStorage.getItem('@odia_agent:total_xp');
-      setTotalXp(storedXp ? parseInt(storedXp) : 0);
+      // Load XP from SQLite user profile
+      const profile = await getUserProfile();
+      setTotalXp(profile.xp);
 
       const uProgs: Record<number, UnitProgress> = {};
       const lProgs: Record<string, LessonProgress> = {};

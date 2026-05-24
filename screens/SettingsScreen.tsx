@@ -8,7 +8,7 @@ import Theme from '../constants/Theme';
 import { getStreakStats, getLocalDateString } from '../services/streak';
 import { checkMicrophonePermission, requestMicrophonePermission } from '../services/permissions';
 import { resetSRSDatabase, getDueCount } from '../services/srs';
-import { resetCurriculumProgress, getOverallCurriculumProgress } from '../services/curriculum';
+import { resetCurriculumProgress, getOverallCurriculumProgress, getUserProfile } from '../services/curriculum';
 
 function getPast7Days() {
   const days = [];
@@ -78,9 +78,9 @@ export default function SettingsScreen() {
         setQuizHighScore(0);
       }
 
-      // Load XP
-      const storedXp = await AsyncStorage.getItem('@odia_agent:total_xp');
-      setTotalXp(storedXp ? parseInt(storedXp) : 0);
+      // Load XP from SQLite
+      const profile = await getUserProfile();
+      setTotalXp(profile.xp);
 
       // Load curriculum map progress
       const curriculumProgress = await getOverallCurriculumProgress();
