@@ -103,6 +103,18 @@ export const CURRICULUM: Unit[] = [
             type: "listen_type",
             prompt: "Listen and type what you hear",
             correctAnswer: "How are you?"
+          },
+          {
+            id: "u1_l1_ex11",
+            type: "match_pairs",
+            prompt: "Match the correct Odia and English pairs",
+            correctAnswer: "completed",
+            pairs: [
+              { odia: "ନମସ୍କାର", english: "Hello" },
+              { odia: "ସ୍ୱାଗତ", english: "Welcome" },
+              { odia: "ଭଲ", english: "Fine" },
+              { odia: "ଧନ୍ୟବାଦ", english: "Thank you" }
+            ]
           }
         ]
       },
@@ -179,6 +191,18 @@ export const CURRICULUM: Unit[] = [
             type: "listen_type",
             prompt: "Listen and type what you hear",
             correctAnswer: "See you again"
+          },
+          {
+            id: "u1_l2_ex11",
+            type: "match_pairs",
+            prompt: "Match the correct Odia and English pairs",
+            correctAnswer: "completed",
+            pairs: [
+              { odia: "ବିଦାୟ", english: "Goodbye" },
+              { odia: "ଧନ୍ୟବାଦ", english: "Thank you" },
+              { odia: "ପୁଣି ଦେଖାହେବ", english: "See you again" },
+              { odia: "ନାମ", english: "Name" }
+            ]
           }
         ]
       }
@@ -262,6 +286,18 @@ export const CURRICULUM: Unit[] = [
             type: "listen_type",
             prompt: "Listen and type what you hear",
             correctAnswer: "Three and four"
+          },
+          {
+            id: "u2_l1_ex11",
+            type: "match_pairs",
+            prompt: "Match the correct Odia and English pairs",
+            correctAnswer: "completed",
+            pairs: [
+              { odia: "ଏକ", english: "One" },
+              { odia: "ଦୁଇ", english: "Two" },
+              { odia: "ତିନି", english: "Three" },
+              { odia: "ଚାରି", english: "Four" }
+            ]
           }
         ]
       },
@@ -338,6 +374,18 @@ export const CURRICULUM: Unit[] = [
             type: "listen_type",
             prompt: "Listen and type what you hear",
             correctAnswer: "Eight and nine"
+          },
+          {
+            id: "u2_l2_ex11",
+            type: "match_pairs",
+            prompt: "Match the correct Odia and English pairs",
+            correctAnswer: "completed",
+            pairs: [
+              { odia: "ଛଅ", english: "Six" },
+              { odia: "ସାତ", english: "Seven" },
+              { odia: "ଆଠ", english: "Eight" },
+              { odia: "ନଅ", english: "Nine" }
+            ]
           }
         ]
       }
@@ -421,6 +469,18 @@ export const CURRICULUM: Unit[] = [
             type: "listen_type",
             prompt: "Listen and type what you hear",
             correctAnswer: "Mother and father"
+          },
+          {
+            id: "u3_l1_ex11",
+            type: "match_pairs",
+            prompt: "Match the correct Odia and English pairs",
+            correctAnswer: "completed",
+            pairs: [
+              { odia: "ବାପା", english: "Father" },
+              { odia: "ମା", english: "Mother" },
+              { odia: "ଭାଇ", english: "Brother" },
+              { odia: "ଭଉଣୀ", english: "Sister" }
+            ]
           }
         ]
       },
@@ -497,6 +557,18 @@ export const CURRICULUM: Unit[] = [
             type: "listen_type",
             prompt: "Listen and type what you hear",
             correctAnswer: "She is my daughter"
+          },
+          {
+            id: "u3_l2_ex11",
+            type: "match_pairs",
+            prompt: "Match the correct Odia and English pairs",
+            correctAnswer: "completed",
+            pairs: [
+              { odia: "ପୁଅ", english: "Son" },
+              { odia: "ଝିଅ", english: "Daughter" },
+              { odia: "ଜେଜେବାପା", english: "Grandfather" },
+              { odia: "ଜେଜେମା", english: "Grandmother" }
+            ]
           }
         ]
       }
@@ -580,6 +652,18 @@ export const CURRICULUM: Unit[] = [
             type: "listen_type",
             prompt: "Listen and type what you hear",
             correctAnswer: "Rice and water"
+          },
+          {
+            id: "u4_l1_ex11",
+            type: "match_pairs",
+            prompt: "Match the correct Odia and English pairs",
+            correctAnswer: "completed",
+            pairs: [
+              { odia: "ପାଣି", english: "Water" },
+              { odia: "ଭାତ", english: "Rice" },
+              { odia: "କ୍ଷୀର", english: "Milk" },
+              { odia: "ମିଠା", english: "Sweet" }
+            ]
           }
         ]
       },
@@ -656,6 +740,18 @@ export const CURRICULUM: Unit[] = [
             type: "listen_type",
             prompt: "Listen and type what you hear",
             correctAnswer: "I want water"
+          },
+          {
+            id: "u4_l2_ex11",
+            type: "match_pairs",
+            prompt: "Match the correct Odia and English pairs",
+            correctAnswer: "completed",
+            pairs: [
+              { odia: "ଭୋକ", english: "Hungry" },
+              { odia: "ଶୋଷ", english: "Thirsty" },
+              { odia: "ଖାଦ୍ୟ", english: "Food" },
+              { odia: "ସ୍ୱାଦିଷ୍ଟ", english: "Tasty" }
+            ]
           }
         ]
       }
@@ -739,6 +835,18 @@ export const CURRICULUM: Unit[] = [
             type: "listen_type",
             prompt: "Listen and type what you hear",
             correctAnswer: "Turn left"
+          },
+          {
+            id: "u5_l1_ex11",
+            type: "match_pairs",
+            prompt: "Match the correct Odia and English pairs",
+            correctAnswer: "completed",
+            pairs: [
+              { odia: "କେଉଁଠି", english: "Where" },
+              { odia: "ବାମ", english: "Left" },
+              { odia: "ଡାହାଣ", english: "Right" },
+              { odia: "ରୁହ", english: "Stop / Wait" }
+            ]
           }
         ]
       },
@@ -815,6 +923,18 @@ export const CURRICULUM: Unit[] = [
             type: "listen_type",
             prompt: "Listen and type what you hear",
             correctAnswer: "Where is the hotel?"
+          },
+          {
+            id: "u5_l2_ex11",
+            type: "match_pairs",
+            prompt: "Match the correct Odia and English pairs",
+            correctAnswer: "completed",
+            pairs: [
+              { odia: "ହୋଟେଲ", english: "Hotel" },
+              { odia: "ଟିକେଟ", english: "Ticket" },
+              { odia: "ବସ୍", english: "Bus" },
+              { odia: "ଟ୍ରେନ୍", english: "Train" }
+            ]
           }
         ]
       }
