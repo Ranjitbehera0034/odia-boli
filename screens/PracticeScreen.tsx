@@ -84,7 +84,20 @@ export default function PracticeScreen() {
 
   return (
     <View style={styles.container}>
-
+      {/* Learning Path Banner */}
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => navigation.navigate('Curriculum')}
+        style={[styles.studyBanner, { backgroundColor: tintCol + '15', borderColor: tintCol }]}
+      >
+        <RNView style={styles.bannerTextContainer}>
+          <Text style={[styles.bannerTitle, { color: tintCol }]}>🗺️ Learning Path</Text>
+          <Text style={styles.bannerSubtitle}>
+            Learn Odia step-by-step through units, lessons, and interactive exercises.
+          </Text>
+        </RNView>
+        <Text style={[styles.bannerArrow, { color: tintCol }]}>→</Text>
+      </TouchableOpacity>
 
       {/* Study Banner */}
       <TouchableOpacity

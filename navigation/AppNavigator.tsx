@@ -16,7 +16,7 @@ import FlashcardScreen from '../screens/FlashcardScreen';
 import QuizScreen from '../screens/QuizScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import OnboardingScreen from '../screens/OnboardingScreen';
-
+import CurriculumScreen from '../screens/CurriculumScreen';
 
 import { MainTabParamList, RootStackParamList } from './types';
 
@@ -171,7 +171,11 @@ export default function AppNavigator({ showOnboarding }: { showOnboarding: boole
           component={HistoryScreen}
           options={{ title: 'Translation History', headerBackTitle: '' }}
         />
-        
+        <Stack.Screen
+          name="Curriculum"
+          component={CurriculumScreen}
+          options={{ title: 'Learning Path', headerBackTitle: '' }}
+        />
         
       </Stack.Navigator>
     </NavigationContainer>

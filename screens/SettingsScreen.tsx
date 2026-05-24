@@ -82,7 +82,9 @@ export default function SettingsScreen() {
       const storedXp = await AsyncStorage.getItem('@odia_agent:total_xp');
       setTotalXp(storedXp ? parseInt(storedXp) : 0);
 
-
+      // Load curriculum map progress
+      const curriculumProgress = await getOverallCurriculumProgress();
+      setMapProgressPercent(curriculumProgress.progressPercent);
 
       // Load SRS due count
       const dueCount = await getDueCount();
@@ -116,7 +118,7 @@ export default function SettingsScreen() {
       // Reset SRS spaced repetition intervals too
       await resetSRSDatabase();
       // Reset Curriculum progress too
-      
+      await resetCurriculumProgress();
       alert('All progress and study settings have been reset!');
       loadStats();
     } catch (e) {

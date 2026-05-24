@@ -17,7 +17,7 @@ export type RootStackParamList = {
   Quiz: undefined;
   History: undefined;
   Onboarding: undefined;
-  
+  Curriculum: undefined;
   
 };
 
