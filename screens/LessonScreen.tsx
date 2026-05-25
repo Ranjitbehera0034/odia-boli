@@ -23,6 +23,7 @@ import { logActivity } from '../services/streak';
 import { isFuzzyMatch, generateWordDiff, DiffWord } from '../services/diff';
 import { getLevelInfo } from '../services/levelSystem';
 import LottieView from 'lottie-react-native';
+import PeacockMascot, { MascotState } from '../components/PeacockMascot';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -61,6 +62,7 @@ export default function LessonScreen() {
   const [levelUpInfo, setLevelUpInfo] = useState({ oldLevel: 1, newLevel: 2 });
   const [hearts, setHearts] = useState(5);
   const [showHeartsModal, setShowHeartsModal] = useState(false);
+  const [mascotState, setMascotState] = useState<MascotState>('idle');
 
   // Match the pairs state
   const [shuffledOdia, setShuffledOdia] = useState<{ id: string; text: string }[]>([]);
@@ -143,6 +145,7 @@ export default function LessonScreen() {
     setTextInputValue('');
     setIsAnswerChecked(false);
     setIsAnswerCorrect(false);
+    setMascotState('idle'); // reset mascot on new exercise
     
     setSelectedOdia(null);
     setSelectedEnglish(null);
@@ -284,6 +287,7 @@ export default function LessonScreen() {
 
     setIsAnswerCorrect(correct);
     setIsAnswerChecked(true);
+    setMascotState(correct ? 'happy' : 'sad');
 
     if (correct) {
       setScore((prev) => prev + 1);
@@ -330,6 +334,7 @@ export default function LessonScreen() {
       await logActivity().catch(console.error);
 
       setShowCelebration(true);
+      setMascotState('celebrate');
     }
   };
 
@@ -763,6 +768,7 @@ export default function LessonScreen() {
   if (showCelebration) {
     return (
       <View style={styles.celebrationContainer}>
+        <PeacockMascot state="celebrate" size={130} />
         <Text style={styles.celebEmoji}>🎉</Text>
         <Text style={styles.celebTitle}>Lesson Completed!</Text>
         <Text style={styles.celebSubtitle}>{lesson.title}</Text>
@@ -917,6 +923,9 @@ export default function LessonScreen() {
           </TouchableOpacity>
         ) : (
           <RNView style={styles.resultBanner}>
+            <RNView style={styles.resultMascotRow}>
+              <PeacockMascot state={mascotState} size={70} />
+            </RNView>
             <RNView style={styles.resultStatusRow}>
               <Text style={[styles.resultStatusTitle, { color: isAnswerCorrect ? '#10B981' : '#EF4444' }]}>
                 {isAnswerCorrect ? '🎉 Correct!' : '😢 Incorrect'}
@@ -1383,6 +1392,11 @@ const styles = StyleSheet.create({
   },
   resultBanner: {
     backgroundColor: 'transparent',
+  },
+  resultMascotRow: {
+    alignItems: 'center',
+    marginBottom: 6,
+    marginTop: -4,
   },
   resultStatusRow: {
     marginBottom: Theme.spacing.md,

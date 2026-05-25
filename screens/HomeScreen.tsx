@@ -10,6 +10,7 @@ import { getDueCount } from '../services/srs';
 import { checkAndApplyHeartsRefill } from '../services/curriculum';
 import { useStreak } from '../services/StreakContext';
 import StreakBadge from '../components/StreakBadge';
+import PeacockMascot, { MascotState } from '../components/PeacockMascot';
 
 export default function HomeScreen() {
   const navigation = useNavigation<HomeScreenNavigationProp>();
@@ -20,6 +21,15 @@ export default function HomeScreen() {
   const [totalXp, setTotalXp] = useState(0);
   const [hearts, setHearts] = useState(5);
   const [showSadModal, setShowSadModal] = useState(false);
+  const [mascotState, setMascotState] = useState<MascotState>('idle');
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Reset idle timer — call on any user interaction
+  const resetIdleTimer = () => {
+    setMascotState('idle');
+    if (idleTimer.current) clearTimeout(idleTimer.current);
+    idleTimer.current = setTimeout(() => setMascotState('sleeping'), 30000);
+  };
 
   const { streak, wasStreakBroken } = useStreak();
   const sadFadeAnim = useRef(new Animated.Value(0)).current;
@@ -34,6 +44,9 @@ export default function HomeScreen() {
       setItems(data);
       setLoading(false);
     });
+    // Start idle timer when home screen mounts
+    resetIdleTimer();
+    return () => { if (idleTimer.current) clearTimeout(idleTimer.current); };
   }, []);
 
   // Show sad animation when streak is broken
@@ -114,6 +127,11 @@ export default function HomeScreen() {
           </RNView>
         </RNView>
         <Text style={styles.subtitle}>Explore the rich history, art, and heritage of Odisha.</Text>
+
+        {/* Mascot — reacts to idle time */}
+        <RNView style={styles.mascotContainer}>
+          <PeacockMascot state={mascotState} size={100} />
+        </RNView>
 
         {dueCount > 0 ? (
           <TouchableOpacity
@@ -197,6 +215,11 @@ const styles = StyleSheet.create({
     color: '#6B7280',
     marginTop: Theme.spacing.xs,
     lineHeight: Theme.typography.lineHeight.sm,
+  },
+  mascotContainer: {
+    alignItems: 'center',
+    marginTop: Theme.spacing.sm,
+    marginBottom: Theme.spacing.xs,
   },
   listContent: {
     paddingHorizontal: Theme.spacing.xl,
