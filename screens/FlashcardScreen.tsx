@@ -11,13 +11,13 @@ import {
 import { Text, View } from '../components/Themed';
 import { useThemeColor } from '../hooks/useThemeColor';
 import Theme from '../constants/Theme';
-import { logActivity } from '../services/streak';
-import { getDueItems, getAllItems, updateSRSCard, resetSRSDatabase, SRSItem } from '../services/srs';
+import { useProgressStore, SRSCard } from '../stores/useProgressStore';
+import { useUserStore } from '../stores/useUserStore';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
 export default function FlashcardScreen() {
-  const [queue, setQueue] = useState<SRSItem[]>([]);
+  const [queue, setQueue] = useState<SRSCard[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isStudyAhead, setIsStudyAhead] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -38,10 +38,12 @@ export default function FlashcardScreen() {
   const loadQueue = async (forceStudyAll = false) => {
     setLoading(true);
     try {
-      let items = await getDueItems();
+      await useProgressStore.getState().loadProgress();
+      const allCards = useProgressStore.getState().srsCards;
+      const now = Date.now();
+      let items = allCards.filter((card) => card.nextReview <= now);
       if (items.length === 0 || forceStudyAll) {
-        // If nothing is due, or if we explicitly click Study Ahead, load all items
-        items = await getAllItems();
+        items = allCards;
         setIsStudyAhead(true);
       } else {
         setIsStudyAhead(false);
@@ -61,7 +63,7 @@ export default function FlashcardScreen() {
   const handleReset = async () => {
     setLoading(true);
     try {
-      await resetSRSDatabase();
+      await useProgressStore.getState().resetSRSCards();
       await loadQueue();
     } catch (e) {
       console.error(e);
@@ -84,10 +86,10 @@ export default function FlashcardScreen() {
       useNativeDriver: Platform.OS !== 'web',
     }).start(async () => {
       // 1. Save results to database
-      await updateSRSCard(currentItem.id, quality);
+      await useProgressStore.getState().reviewSRSCard(currentItem.id, quality);
       
       // 2. Track activity streak
-      logActivity().catch(console.error);
+      useUserStore.getState().updateStreak().catch(console.error);
 
       // 3. Reset card orientation/pan coordinates for the incoming card
       setFlipped(false);

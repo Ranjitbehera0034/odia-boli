@@ -16,15 +16,10 @@ import { Text, View } from '../components/Themed';
 import { useThemeColor } from '../hooks/useThemeColor';
 import Theme from '../constants/Theme';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
-import { CURRICULUM, Unit, Lesson } from '../services/curriculumData';
-import {
-  getUnitProgress,
-  getOverallCurriculumProgress,
-  getLessonProgress,
-  checkAndApplyHeartsRefill,
-  LessonProgress,
-  UnitProgress,
-} from '../services/curriculum';
+import { Lesson } from '../services/curriculumData';
+import { useUserStore } from '../stores/useUserStore';
+import { useLessonStore } from '../stores/useLessonStore';
+import { useProgressStore } from '../stores/useProgressStore';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -50,12 +45,35 @@ type LessonState = 'completed' | 'current' | 'locked';
 export default function CurriculumScreen() {
   const navigation = useNavigation<any>();
   const isFocused = useIsFocused();
+
+  // Zustand Store selectors
+  const totalXp = useUserStore((state) => state.xp);
+  const hearts = useUserStore((state) => state.hearts);
+  const units = useLessonStore((state) => state.units);
+  const lessonProgresses = useProgressStore((state) => state.lessonProgress);
+  const storeLoading = useUserStore((state) => state.loading) || useProgressStore((state) => state.loading);
+
   const [loading, setLoading] = useState(true);
-  const [overallProgress, setOverallProgress] = useState({ completedLessons: 0, totalLessons: 0, progressPercent: 0 });
-  const [unitProgresses, setUnitProgresses] = useState<Record<number, UnitProgress>>({});
-  const [lessonProgresses, setLessonProgresses] = useState<Record<string, LessonProgress>>({});
-  const [totalXp, setTotalXp] = useState(0);
-  const [hearts, setHearts] = useState(5);
+
+  // Compute overall progress dynamically
+  const overallProgress = React.useMemo(() => {
+    const totalLessons = units.reduce((acc, unit) => acc + unit.lessons.length, 0);
+    const completedLessons = Object.values(lessonProgresses).filter((p) => p.isCompleted).length;
+    const progressPercent = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
+    return { completedLessons, totalLessons, progressPercent };
+  }, [units, lessonProgresses]);
+
+  // Compute unit progresses dynamically
+  const unitProgresses = React.useMemo(() => {
+    const progresses: Record<number, { progressPercent: number; completedLessonsCount: number; totalLessonsCount: number }> = {};
+    units.forEach((unit) => {
+      const totalLessonsCount = unit.lessons.length;
+      const completedLessonsCount = unit.lessons.filter((l) => lessonProgresses[l.id]?.isCompleted).length;
+      const progressPercent = totalLessonsCount > 0 ? Math.round((completedLessonsCount / totalLessonsCount) * 100) : 0;
+      progresses[unit.id] = { progressPercent, completedLessonsCount, totalLessonsCount };
+    });
+    return progresses;
+  }, [units, lessonProgresses]);
   
   // Interactive Popover State
   const [selectedLesson, setSelectedLesson] = useState<{ lesson: Lesson; unitId: number; state: LessonState } | null>(null);
@@ -108,31 +126,8 @@ export default function CurriculumScreen() {
   const loadProgressData = async () => {
     try {
       setLoading(true);
-      const overall = await getOverallCurriculumProgress();
-      setOverallProgress(overall);
-
-      // Load XP and hearts from SQLite user profile
-      const profile = await checkAndApplyHeartsRefill();
-      setTotalXp(profile.xp);
-      setHearts(profile.hearts);
-
-      const uProgs: Record<number, UnitProgress> = {};
-      const lProgs: Record<string, LessonProgress> = {};
-
-      for (const unit of CURRICULUM) {
-        const prog = await getUnitProgress(unit.id);
-        uProgs[unit.id] = prog;
-
-        for (const lesson of unit.lessons) {
-          const lProg = await getLessonProgress(lesson.id);
-          if (lProg) {
-            lProgs[lesson.id] = lProg;
-          }
-        }
-      }
-
-      setUnitProgresses(uProgs);
-      setLessonProgresses(lProgs);
+      await useUserStore.getState().checkRefill();
+      await useProgressStore.getState().loadProgress();
     } catch (e) {
       console.error('Failed to load curriculum progress:', e);
     } finally {
@@ -146,7 +141,7 @@ export default function CurriculumScreen() {
     let foundCurrent = false;
 
     // Traverse all units and lessons sequentially
-    for (const unit of CURRICULUM) {
+    for (const unit of units) {
       for (const lesson of unit.lessons) {
         const isCompleted = lessonProgresses[lesson.id]?.isCompleted || false;
         
@@ -243,7 +238,7 @@ export default function CurriculumScreen() {
         </RNView>
 
         {/* Learning roadmap pathway */}
-        {CURRICULUM.map((unit) => {
+        {units.map((unit) => {
           const color = UNIT_THEME_COLORS[unit.id] || tintCol;
           const icon = UNIT_THEME_ICONS[unit.id] || '🌟';
           const progress = unitProgresses[unit.id] || { progressPercent: 0, completedLessonsCount: 0, totalLessonsCount: 0 };

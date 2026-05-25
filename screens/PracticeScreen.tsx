@@ -6,7 +6,7 @@ import { useThemeColor } from '../hooks/useThemeColor';
 import Theme from '../constants/Theme';
 import * as Speech from 'expo-speech';
 import { useNavigation, useIsFocused } from '@react-navigation/native';
-import { getDueCount } from '../services/srs';
+import { useProgressStore } from '../stores/useProgressStore';
 
 type Category = 'Greetings' | 'Shopping' | 'Travel' | 'Food' | 'Emergency';
 
@@ -17,7 +17,7 @@ export default function PracticeScreen() {
   const isFocused = useIsFocused();
   const [selectedCategory, setSelectedCategory] = useState<Category>('Greetings');
   const [activePhraseId, setActivePhraseId] = useState<string | null>(null);
-  const [dueCount, setDueCount] = useState(0);
+  const dueCount = useProgressStore((state) => state.dueCount);
 
   const cardCol = useThemeColor({}, 'card');
   const borderCol = useThemeColor({}, 'border');
@@ -25,7 +25,7 @@ export default function PracticeScreen() {
 
   useEffect(() => {
     if (isFocused) {
-      getDueCount().then(setDueCount).catch(console.error);
+      useProgressStore.getState().loadProgress().catch(console.error);
     }
   }, [isFocused]);
 

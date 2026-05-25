@@ -4,7 +4,7 @@ import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { Text, View } from '../components/Themed';
 import { useThemeColor } from '../hooks/useThemeColor';
 import Theme from '../constants/Theme';
-import { getTranslationHistory, deleteHistoryItem, clearAllHistory, HistoryEntry } from '../services/history';
+import { useProgressStore, HistoryEntry } from '../stores/useProgressStore';
 import { SwipeableItem } from '../components/SwipeableItem';
 
 function formatTimestamp(timestamp: number): string {
@@ -20,7 +20,7 @@ function formatTimestamp(timestamp: number): string {
 export default function HistoryScreen() {
   const navigation = useNavigation();
   const isFocused = useIsFocused();
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const history = useProgressStore((state) => state.translationHistory);
 
   const cardCol = useThemeColor({}, 'card');
   const borderCol = useThemeColor({}, 'border');
@@ -28,18 +28,12 @@ export default function HistoryScreen() {
 
   useEffect(() => {
     if (isFocused) {
-      loadHistory();
+      useProgressStore.getState().loadProgress().catch(console.error);
     }
   }, [isFocused]);
 
-  const loadHistory = async () => {
-    const list = await getTranslationHistory();
-    setHistory(list);
-  };
-
   const handleDelete = async (id: string) => {
-    await deleteHistoryItem(id);
-    setHistory((prev) => prev.filter((item) => item.id !== id));
+    await useProgressStore.getState().deleteHistoryItem(id);
   };
 
   const handleClearAll = () => {
@@ -52,8 +46,7 @@ export default function HistoryScreen() {
           text: 'Clear All',
           style: 'destructive',
           onPress: async () => {
-            await clearAllHistory();
-            setHistory([]);
+            await useProgressStore.getState().clearHistory();
           },
         },
       ]

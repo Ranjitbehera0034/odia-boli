@@ -2,14 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SplashScreen from 'expo-splash-screen';
 import AppNavigator from './navigation/AppNavigator';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { initSRSDatabase } from './services/srs';
-import { initCurriculumDatabase } from './services/curriculum';
 import { initLeagueDatabase } from './services/league';
-import { StreakProvider } from './services/StreakContext';
+import { initAppDatabase } from './services/db';
+import { useUserStore } from './stores/useUserStore';
+import { useLessonStore } from './stores/useLessonStore';
+import { useProgressStore } from './stores/useProgressStore';
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync().catch(console.warn);
@@ -22,20 +22,26 @@ export default function App() {
     async function prepare() {
       try {
         // Initialize SQLite databases
-        await initSRSDatabase();
-        await initCurriculumDatabase();
+        await initAppDatabase();
         await initLeagueDatabase();
 
-        // Fetch onboarding flag
-        const onboardingCompleted = await AsyncStorage.getItem('@odia_agent:onboarding_completed');
-        setShowOnboarding(onboardingCompleted !== 'true');
+        // Load Zustand stores
+        await useUserStore.getState().loadUser();
+        await useLessonStore.getState().loadLessons();
+        await useProgressStore.getState().loadProgress();
 
-        // Pre-load assets, initialize services, and hold splash screen for 1.5s to display the cultural motifs
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        // Check hearts regeneration on startup
+        await useUserStore.getState().checkRefill();
+
+        // Fetch onboarding flag from the store
+        const onboardingCompleted = useUserStore.getState().onboardingCompleted;
+        setShowOnboarding(!onboardingCompleted);
+
+        // Pre-load assets and display cultural splash screen motifs
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       } catch (e) {
         console.warn(e);
       } finally {
-        // Tell the application to render
         setAppIsReady(true);
       }
     }
@@ -45,7 +51,6 @@ export default function App() {
 
   const onLayoutRootView = useCallback(async () => {
     if (appIsReady) {
-      // Hide the splash screen immediately when the root view is rendered
       await SplashScreen.hideAsync();
     }
   }, [appIsReady]);
@@ -56,14 +61,12 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <StreakProvider>
-        <ErrorBoundary>
-          <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
-            <AppNavigator showOnboarding={showOnboarding} />
-          </View>
-        </ErrorBoundary>
-        <StatusBar style="auto" />
-      </StreakProvider>
+      <ErrorBoundary>
+        <View style={{ flex: 1 }} onLayout={onLayoutRootView}>
+          <AppNavigator showOnboarding={showOnboarding} />
+        </View>
+      </ErrorBoundary>
+      <StatusBar style="auto" />
     </SafeAreaProvider>
   );
 }

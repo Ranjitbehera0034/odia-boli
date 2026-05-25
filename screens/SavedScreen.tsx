@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   View as RNView,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useProgressStore } from '../stores/useProgressStore';
 import { Text, View } from '../components/Themed';
 import { useThemeColor } from '../hooks/useThemeColor';
 import Theme from '../constants/Theme';
@@ -19,10 +19,8 @@ interface SavedTranslation {
   timestamp: number;
 }
 
-const STORAGE_KEY = '@odia_agent:saved_translations';
-
 export default function SavedScreen() {
-  const [items, setItems] = useState<SavedTranslation[]>([]);
+  const items = useProgressStore((state) => state.savedTranslations);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSpeechId, setActiveSpeechId] = useState<string | null>(null);
 
@@ -31,27 +29,9 @@ export default function SavedScreen() {
   const tintCol = useThemeColor({}, 'tint');
   const textCol = useThemeColor({}, 'text');
 
-  useEffect(() => {
-    loadSavedTranslations();
-  }, []);
-
-  const loadSavedTranslations = async () => {
+  const handleDelete = async (odia: string, english: string, id: string) => {
     try {
-      const stored = await AsyncStorage.getItem(STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored) as SavedTranslation[];
-        setItems(parsed.sort((a, b) => b.timestamp - a.timestamp));
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const handleDelete = async (id: string) => {
-    try {
-      const nextItems = items.filter((item) => item.id !== id);
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextItems));
-      setItems(nextItems);
+      await useProgressStore.getState().toggleSaveTranslation(odia, english);
       if (activeSpeechId === id) {
         Speech.stop();
         setActiveSpeechId(null);
@@ -111,7 +91,7 @@ export default function SavedScreen() {
 
           <TouchableOpacity
             activeOpacity={0.7}
-            onPress={() => handleDelete(item.id)}
+            onPress={() => handleDelete(item.odia, item.english, item.id)}
             style={[styles.actionButton, { borderColor: borderCol }]}
           >
             <Text style={styles.deleteIcon}>🗑️</Text>

@@ -17,9 +17,8 @@ import Theme from '../constants/Theme';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import * as Speech from 'expo-speech';
 import { CURRICULUM, Exercise, Lesson } from '../services/curriculumData';
-import { completeLesson, getUserProfile, updateUserProfile, deductHeart, refillHeartsFull, checkAndApplyHeartsRefill } from '../services/curriculum';
-import { addLeagueXp } from '../services/league';
-import { logActivity } from '../services/streak';
+import { useUserStore } from '../stores/useUserStore';
+import { useProgressStore } from '../stores/useProgressStore';
 import { isFuzzyMatch, generateWordDiff, DiffWord } from '../services/diff';
 import { getLevelInfo } from '../services/levelSystem';
 import LottieView from 'lottie-react-native';
@@ -98,15 +97,16 @@ export default function LessonScreen() {
     // Load user profile and hearts from SQLite
     const loadProfile = async () => {
       try {
-        const profile = await checkAndApplyHeartsRefill();
-        setTotalXp(profile.xp);
-        setCurrentLevel(profile.level);
-        setHearts(profile.hearts);
+        const userStore = useUserStore.getState();
+        await userStore.checkRefill();
+        setTotalXp(userStore.xp);
+        setCurrentLevel(userStore.level);
+        setHearts(userStore.hearts);
         
-        const info = getLevelInfo(profile.xp);
+        const info = getLevelInfo(userStore.xp);
         xpProgressAnim.setValue(info.progress);
         
-        if (profile.hearts === 0) {
+        if (userStore.hearts === 0) {
           setShowHeartsModal(true);
         }
       } catch (e) {
@@ -228,14 +228,14 @@ export default function LessonScreen() {
 
   const updateXpAndLevel = async (amount: number) => {
     try {
-      const currentXp = totalXp;
+      const userStore = useUserStore.getState();
+      const currentXp = userStore.xp;
       const newXp = currentXp + amount;
       const oldInfo = getLevelInfo(currentXp);
       const newInfo = getLevelInfo(newXp);
       
       setTotalXp(newXp);
-      await updateUserProfile(newXp, newInfo.level);
-      await addLeagueXp(amount); // track weekly XP for league
+      await userStore.addXp(amount, 'Lesson completion / progress');
       
       if (newInfo.level > oldInfo.level) {
         setLevelUpInfo({ oldLevel: oldInfo.level, newLevel: newInfo.level });
@@ -305,7 +305,7 @@ export default function LessonScreen() {
         setWordDiffResults(diff);
       }
       // Deduct a heart
-      const newHearts = await deductHeart();
+      const newHearts = await useUserStore.getState().deductHeart();
       setHearts(newHearts);
       if (newHearts === 0) {
         setShowHeartsModal(true);
@@ -334,8 +334,8 @@ export default function LessonScreen() {
       }
 
       // Save stats to DB
-      await completeLesson(lesson.id, unitId, score);
-      await logActivity().catch(console.error);
+      await useProgressStore.getState().completeLesson(lesson.id, unitId, score);
+      await useUserStore.getState().updateStreak().catch(console.error);
 
       setShowCelebration(true);
       setMascotState('celebrate');
@@ -1235,7 +1235,7 @@ export default function LessonScreen() {
                     {
                       text: 'Skip Ad',
                       onPress: async () => {
-                        await refillHeartsFull();
+                        await useUserStore.getState().refillHearts();
                         setHearts(5);
                         setShowHeartsModal(false);
                       }

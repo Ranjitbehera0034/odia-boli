@@ -1,15 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, Switch, TouchableOpacity, ScrollView, View as RNView, Alert, Animated } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useIsFocused } from '@react-navigation/native';
 import { Text, View } from '../components/Themed';
 import { useThemeColor } from '../hooks/useThemeColor';
 import Theme from '../constants/Theme';
-import { getLocalDateString, buyStreakFreeze, STREAK_FREEZE_COST } from '../services/streak';
 import { checkMicrophonePermission, requestMicrophonePermission } from '../services/permissions';
-import { resetSRSDatabase, getDueCount } from '../services/srs';
-import { resetCurriculumProgress, getOverallCurriculumProgress, checkAndApplyHeartsRefill, updateUserProfile } from '../services/curriculum';
-import { useStreak } from '../services/StreakContext';
+import { useUserStore } from '../stores/useUserStore';
+import { useProgressStore } from '../stores/useProgressStore';
+import { CURRICULUM } from '../services/curriculumData';
+
+const STREAK_FREEZE_COST = 200;
+
+function getLocalDateString(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 function getPast7Days() {
   const days = [];
@@ -25,16 +32,31 @@ function getPast7Days() {
 
 export default function SettingsScreen() {
   const isFocused = useIsFocused();
-  const { streak, streakFreezeCount, activityDates, freezeUsedDates, refreshStreak } = useStreak();
-  const [totalLearned, setTotalLearned] = useState(0);
-  const [totalSaved, setTotalSaved] = useState(0);
-  const [quizzesTaken, setQuizzesTaken] = useState(0);
-  const [quizHighScore, setQuizHighScore] = useState(0);
-  const [totalXp, setTotalXp] = useState(0);
-  const [mapProgressPercent, setMapProgressPercent] = useState(0);
-  const [srsDueCount, setSrsDueCount] = useState(0);
-  const [buyingFreeze, setBuyingFreeze] = useState(false);
+  const streak = useUserStore((state) => state.streak);
+  const streakFreezeCount = useUserStore((state) => state.streakFreezeCount);
+  const activityDates = useUserStore((state) => state.activityDates);
+  const freezeUsedDates = useUserStore((state) => state.freezeUsedDates);
+  const quizzesTaken = useUserStore((state) => state.quizzesTaken);
+  const quizHighScore = useUserStore((state) => state.quizHighScore);
+  const totalXp = useUserStore((state) => state.xp);
 
+  const lessonProgress = useProgressStore((state) => state.lessonProgress);
+  const vocabulary = useProgressStore((state) => state.vocabulary);
+  const savedTranslations = useProgressStore((state) => state.savedTranslations);
+  const srsDueCount = useProgressStore((state) => state.dueCount);
+
+  // Computed stats
+  const totalLearned = vocabulary.filter((item) => item.isLearned).length;
+  const totalSaved = savedTranslations.length;
+
+  let totalLessons = 0;
+  for (const unit of CURRICULUM) {
+    totalLessons += unit.lessons.length;
+  }
+  const completedLessons = Object.values(lessonProgress).filter((p) => p.isCompleted).length;
+  const mapProgressPercent = totalLessons > 0 ? Math.round((completedLessons / totalLessons) * 100) : 0;
+
+  const [buyingFreeze, setBuyingFreeze] = useState(false);
   const [notifications, setNotifications] = useState(true);
   const [offlineMode, setOfflineMode] = useState(false);
   const [microphoneGranted, setMicrophoneGranted] = useState(false);
@@ -45,48 +67,14 @@ export default function SettingsScreen() {
 
   useEffect(() => {
     if (isFocused) {
-      loadStats();
+      useUserStore.getState().loadUser().catch(console.error);
+      useProgressStore.getState().loadProgress().catch(console.error);
+      checkMicrophone();
     }
   }, [isFocused]);
 
-  const loadStats = async () => {
+  const checkMicrophone = async () => {
     try {
-      const learned = await AsyncStorage.getItem('@odia_agent:learned_phrases');
-      if (learned) {
-        setTotalLearned(JSON.parse(learned).length);
-      } else {
-        setTotalLearned(0);
-      }
-
-      const saved = await AsyncStorage.getItem('@odia_agent:saved_translations');
-      if (saved) {
-        setTotalSaved(JSON.parse(saved).length);
-      } else {
-        setTotalSaved(0);
-      }
-
-      const quizStats = await AsyncStorage.getItem('@odia_agent:quiz_stats');
-      if (quizStats) {
-        const parsed = JSON.parse(quizStats);
-        setQuizzesTaken(parsed.totalQuizzes || 0);
-        setQuizHighScore(parsed.highScore || 0);
-      } else {
-        setQuizzesTaken(0);
-        setQuizHighScore(0);
-      }
-
-      // Load user profile and hearts from SQLite
-      const profile = await checkAndApplyHeartsRefill();
-      setTotalXp(profile.xp);
-
-      // Load curriculum map progress
-      const curriculumProgress = await getOverallCurriculumProgress();
-      setMapProgressPercent(curriculumProgress.progressPercent);
-
-      // Load SRS due count
-      const dueCount = await getDueCount();
-      setSrsDueCount(dueCount);
-
       const micStatus = await checkMicrophonePermission();
       setMicrophoneGranted(micStatus.granted);
     } catch (e) {
@@ -103,17 +91,17 @@ export default function SettingsScreen() {
   };
 
   const handleBuyStreakFreeze = async () => {
-    if (totalXp < STREAK_FREEZE_COST) {
+    if (totalXp < 200) {
       Alert.alert(
         'Not Enough XP',
-        `You need ${STREAK_FREEZE_COST} XP to buy a Streak Freeze. You have ${totalXp} XP.`,
+        `You need 200 XP to buy a Streak Freeze. You have ${totalXp} XP.`,
         [{ text: 'OK' }]
       );
       return;
     }
     Alert.alert(
       '🧊 Buy Streak Freeze?',
-      `Spend ${STREAK_FREEZE_COST} XP to protect your streak for one missed day?`,
+      `Spend 200 XP to protect your streak for one missed day?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -121,16 +109,12 @@ export default function SettingsScreen() {
           onPress: async () => {
             setBuyingFreeze(true);
             try {
-              // Deduct XP from user profile
-              const profile = await checkAndApplyHeartsRefill();
-              const newXp = Math.max(0, profile.xp - STREAK_FREEZE_COST);
-              const { getLevelInfo } = require('../services/levelSystem');
-              const levelInfo = getLevelInfo(newXp);
-              await updateUserProfile(newXp, levelInfo.level);
-              await buyStreakFreeze();
-              await refreshStreak();
-              await loadStats();
-              Alert.alert('🧊 Streak Freeze Added!', 'Your streak is protected for one missed day.');
+              const success = await useUserStore.getState().buyStreakFreeze();
+              if (success) {
+                Alert.alert('🧊 Streak Freeze Added!', 'Your streak is protected for one missed day.');
+              } else {
+                Alert.alert('Error', 'Failed to purchase streak freeze.');
+              }
             } catch (e) {
               console.error(e);
             } finally {
@@ -143,24 +127,26 @@ export default function SettingsScreen() {
   };
 
   const handleResetStats = async () => {
-    try {
-      await AsyncStorage.removeItem('@odia_agent:last_active_date');
-      await AsyncStorage.removeItem('@odia_agent:streak_count');
-      await AsyncStorage.removeItem('@odia_agent:activity_dates');
-      await AsyncStorage.removeItem('@odia_agent:learned_phrases');
-      await AsyncStorage.removeItem('@odia_agent:saved_translations');
-      await AsyncStorage.removeItem('@odia_agent:quiz_stats');
-      await AsyncStorage.removeItem('@odia_agent:onboarding_completed');
-      await AsyncStorage.removeItem('@odia_agent:total_xp');
-      // Reset SRS spaced repetition intervals too
-      await resetSRSDatabase();
-      // Reset Curriculum progress too
-      await resetCurriculumProgress();
-      alert('All progress and study settings have been reset!');
-      loadStats();
-    } catch (e) {
-      console.error(e);
-    }
+    Alert.alert(
+      '⚠️ Reset All Progress?',
+      'This will delete all your XP, streaks, completed lessons, flashcards, vocabulary progress, and saved translations. This cannot be undone!',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Reset Everything',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await useUserStore.getState().resetUser();
+              await useProgressStore.getState().resetProgress();
+              alert('All progress and study settings have been reset!');
+            } catch (e) {
+              console.error(e);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const renderSettingRow = (

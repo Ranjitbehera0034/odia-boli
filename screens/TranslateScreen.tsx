@@ -10,17 +10,15 @@ import {
   useColorScheme,
   View as RNView,
 } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNetInfo } from '@react-native-community/netinfo';
 import { Text, View } from '../components/Themed';
 import { useThemeColor } from '../hooks/useThemeColor';
 import Theme from '../constants/Theme';
 import { translateOdiaToEnglish } from '../services/gemini';
 import { OdiaTextInput } from '../components/OdiaTextInput';
-import { logActivity } from '../services/streak';
 import * as Speech from 'expo-speech';
-import { getTranslationFromCache, saveTranslationToCache } from '../services/translationCache';
-import { addTranslationToHistory } from '../services/history';
+import { useUserStore } from '../stores/useUserStore';
+import { useProgressStore } from '../stores/useProgressStore';
 
 interface WordInfo {
   word: string;
@@ -76,6 +74,11 @@ export default function TranslateScreen() {
   const borderCol = useThemeColor({}, 'border');
   const tintCol = useThemeColor({}, 'tint');
 
+  const savedTranslations = useProgressStore((state) => state.savedTranslations);
+  const getTranslationFromCache = useProgressStore((state) => state.getTranslationFromCache);
+  const saveTranslationToCache = useProgressStore((state) => state.saveTranslationToCache);
+  const addTranslationToHistory = useProgressStore((state) => state.addHistory);
+
   const netInfo = useNetInfo();
   const colorScheme = useColorScheme();
   const isOffline = netInfo.isConnected === false;
@@ -91,53 +94,20 @@ export default function TranslateScreen() {
   // Check if current translation is saved
   useEffect(() => {
     if (inputText.trim() && translatedText.trim()) {
-      checkIfSaved();
+      const exists = savedTranslations.some(
+        (item) => item.odia.trim() === inputText.trim() && item.english.trim() === translatedText.trim()
+      );
+      setIsSaved(exists);
     } else {
       setIsSaved(false);
     }
-  }, [inputText, translatedText]);
-
-  const checkIfSaved = async () => {
-    try {
-      const stored = await AsyncStorage.getItem('@odia_agent:saved_translations');
-      if (stored) {
-        const parsed = JSON.parse(stored) as { odia: string; english: string }[];
-        const exists = parsed.some(
-          (item) => item.odia.trim() === inputText.trim() && item.english.trim() === translatedText.trim()
-        );
-        setIsSaved(exists);
-      } else {
-        setIsSaved(false);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
+  }, [inputText, translatedText, savedTranslations]);
 
   const handleToggleSave = async () => {
     if (!inputText.trim() || !translatedText.trim()) return;
 
     try {
-      const stored = await AsyncStorage.getItem('@odia_agent:saved_translations');
-      let parsed = stored ? (JSON.parse(stored) as any[]) : [];
-
-      if (isSaved) {
-        parsed = parsed.filter(
-          (item) => !(item.odia.trim() === inputText.trim() && item.english.trim() === translatedText.trim())
-        );
-        setIsSaved(false);
-      } else {
-        const newItem = {
-          id: Math.random().toString(36).substring(2, 9),
-          odia: inputText.trim(),
-          english: translatedText.trim(),
-          timestamp: Date.now(),
-        };
-        parsed.push(newItem);
-        setIsSaved(true);
-      }
-
-      await AsyncStorage.setItem('@odia_agent:saved_translations', JSON.stringify(parsed));
+      await useProgressStore.getState().toggleSaveTranslation(inputText, translatedText);
     } catch (e) {
       console.error(e);
     }
@@ -163,7 +133,7 @@ export default function TranslateScreen() {
     
     // Stop any active speech
     Speech.stop();
-    logActivity().catch(console.error);
+    useUserStore.getState().updateStreak().catch(console.error);
     setSpeechState('stopped');
     setActiveWordIndex(null);
 

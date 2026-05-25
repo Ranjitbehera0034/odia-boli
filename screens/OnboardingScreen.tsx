@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { StyleSheet, TouchableOpacity, View as RNView, Dimensions, Animated } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import LottieView from 'lottie-react-native';
 
@@ -9,9 +8,8 @@ import { useThemeColor } from '../hooks/useThemeColor';
 import Theme from '../constants/Theme';
 import PeacockMascot, { MascotState } from '../components/PeacockMascot';
 import { PLACEMENT_QUESTIONS, getPlacementUnit } from '../services/placementTest';
-import { completeLesson, updateUserProfile, getUserProfile } from '../services/curriculum';
-import { addLeagueXp } from '../services/league';
-import { getLevelInfo } from '../services/levelSystem';
+import { useUserStore } from '../stores/useUserStore';
+import { useProgressStore } from '../stores/useProgressStore';
 
 const { width } = Dimensions.get('window');
 
@@ -81,7 +79,8 @@ export default function OnboardingScreen() {
   const handleSkipTest = async () => {
     setIsCompleting(true);
     try {
-      await AsyncStorage.setItem('@odia_agent:onboarding_completed', 'true');
+      await useUserStore.getState().completeOnboarding(1, 0);
+      await useUserStore.getState().loadUser();
       navigation.reset({
         index: 0,
         routes: [{ name: 'MainTabs' }],
@@ -133,35 +132,30 @@ export default function OnboardingScreen() {
     const placedUnit = getPlacementUnit(score);
 
     try {
+      const userStore = useUserStore.getState();
+      const progressStore = useProgressStore.getState();
+
       // 1. Mark lessons completed in SQLite based on placement
       if (placedUnit === 2) {
         // Skip Unit 1 (lessons u1_l1, u1_l2)
-        await completeLesson('u1_l1', 1, 11);
-        await completeLesson('u1_l2', 1, 11);
-        
-        // Award 100 XP
-        const profile = await getUserProfile();
-        const newXp = profile.xp + 100;
-        const newLevelInfo = getLevelInfo(newXp);
-        await updateUserProfile(newXp, newLevelInfo.level);
-        await addLeagueXp(100);
+        await progressStore.completeLesson('u1_l1', 1, 11);
+        await progressStore.completeLesson('u1_l2', 1, 11);
+        await userStore.addXp(100, 'Placement Test Skip (Unit 1)');
       } else if (placedUnit === 3) {
         // Skip Unit 1 & Unit 2 (lessons u1_l1, u1_l2, u2_l1, u2_l2)
-        await completeLesson('u1_l1', 1, 11);
-        await completeLesson('u1_l2', 1, 11);
-        await completeLesson('u2_l1', 2, 11);
-        await completeLesson('u2_l2', 2, 11);
-        
-        // Award 200 XP
-        const profile = await getUserProfile();
-        const newXp = profile.xp + 200;
-        const newLevelInfo = getLevelInfo(newXp);
-        await updateUserProfile(newXp, newLevelInfo.level);
-        await addLeagueXp(200);
+        await progressStore.completeLesson('u1_l1', 1, 11);
+        await progressStore.completeLesson('u1_l2', 1, 11);
+        await progressStore.completeLesson('u2_l1', 2, 11);
+        await progressStore.completeLesson('u2_l2', 2, 11);
+        await userStore.addXp(200, 'Placement Test Skip (Unit 1 & 2)');
       }
 
       // 2. Set onboarding completed flag
-      await AsyncStorage.setItem('@odia_agent:onboarding_completed', 'true');
+      await userStore.completeOnboarding(placedUnit, score);
+      
+      // Reload stores to make sure everything is up-to-date
+      await userStore.loadUser();
+      await progressStore.loadProgress();
 
       // 3. Reset stack to MainTabs
       navigation.reset({

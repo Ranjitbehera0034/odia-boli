@@ -1,14 +1,15 @@
 import React, { useEffect, useRef } from 'react';
 import { Animated, TouchableOpacity, StyleSheet, View } from 'react-native';
 import { Text } from './Themed';
-import { useStreak } from '../services/StreakContext';
+import { useUserStore } from '../stores/useUserStore';
 
 interface Props {
   onPress?: () => void;
 }
 
 export default function StreakBadge({ onPress }: Props) {
-  const { streak, streakFreezeCount } = useStreak();
+  const streak = useUserStore((state) => state.streak);
+  const streakFreezeCount = useUserStore((state) => state.streakFreezeCount);
 
   // Glow pulse for streaks > 2
   const glowAnim = useRef(new Animated.Value(1)).current;

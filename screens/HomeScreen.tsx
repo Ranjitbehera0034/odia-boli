@@ -6,9 +6,8 @@ import { useNavigation, useIsFocused } from '@react-navigation/native';
 import { HomeScreenNavigationProp } from '../navigation/types';
 import { useThemeColor } from '../hooks/useThemeColor';
 import Theme from '../constants/Theme';
-import { getDueCount } from '../services/srs';
-import { checkAndApplyHeartsRefill } from '../services/curriculum';
-import { useStreak } from '../services/StreakContext';
+import { useUserStore } from '../stores/useUserStore';
+import { useProgressStore } from '../stores/useProgressStore';
 import StreakBadge from '../components/StreakBadge';
 import PeacockMascot, { MascotState } from '../components/PeacockMascot';
 
@@ -17,9 +16,6 @@ export default function HomeScreen() {
   const isFocused = useIsFocused();
   const [items, setItems] = useState<OdiaItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [dueCount, setDueCount] = useState(0);
-  const [totalXp, setTotalXp] = useState(0);
-  const [hearts, setHearts] = useState(5);
   const [showSadModal, setShowSadModal] = useState(false);
   const [mascotState, setMascotState] = useState<MascotState>('idle');
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -31,7 +27,12 @@ export default function HomeScreen() {
     idleTimer.current = setTimeout(() => setMascotState('sleeping'), 30000);
   };
 
-  const { streak, wasStreakBroken } = useStreak();
+  const streak = useUserStore((state) => state.streak);
+  const wasStreakBroken = useUserStore((state) => state.wasStreakBroken);
+  const totalXp = useUserStore((state) => state.xp);
+  const hearts = useUserStore((state) => state.hearts);
+  const dueCount = useProgressStore((state) => state.dueCount);
+
   const sadFadeAnim = useRef(new Animated.Value(0)).current;
   const sadScaleAnim = useRef(new Animated.Value(0.6)).current;
 
@@ -64,15 +65,8 @@ export default function HomeScreen() {
 
   useEffect(() => {
     if (isFocused) {
-      getDueCount().then(setDueCount).catch(console.error);
-      
-      // Load XP and hearts from SQLite user profile
-      checkAndApplyHeartsRefill()
-        .then((profile) => {
-          setTotalXp(profile.xp);
-          setHearts(profile.hearts);
-        })
-        .catch(console.error);
+      useProgressStore.getState().loadProgress();
+      useUserStore.getState().checkRefill();
     }
   }, [isFocused]);
 

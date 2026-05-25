@@ -1,12 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { StyleSheet, TouchableOpacity, ScrollView, ActivityIndicator, View as RNView } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useUserStore } from '../stores/useUserStore';
 import { Text, View } from '../components/Themed';
 import { PRACTICAL_PHRASES, Phrase } from '../services/phrases';
 import { useThemeColor } from '../hooks/useThemeColor';
 import Theme from '../constants/Theme';
 import { useNavigation } from '@react-navigation/native';
-import { logActivity } from '../services/streak';
 
 interface QuizQuestion {
   id: string;
@@ -65,24 +64,7 @@ export default function QuizScreen() {
     setAnswers([]);
     setQuizFinished(false);
     setSelectedOption(null);
-    logActivity().catch(console.error);
-  };
-
-  const saveQuizResult = async (finalScore: number) => {
-    try {
-      const stored = await AsyncStorage.getItem('@odia_agent:quiz_stats');
-      let stats = { totalQuizzes: 0, highScore: 0 };
-      if (stored) {
-        stats = JSON.parse(stored);
-      }
-      stats.totalQuizzes += 1;
-      if (finalScore > stats.highScore) {
-        stats.highScore = finalScore;
-      }
-      await AsyncStorage.setItem('@odia_agent:quiz_stats', JSON.stringify(stats));
-    } catch (e) {
-      console.error('Failed to save quiz stats', e);
-    }
+    useUserStore.getState().updateStreak().catch(console.error);
   };
 
   const handleSelectOption = (option: string) => {
@@ -110,9 +92,9 @@ export default function QuizScreen() {
         setSelectedOption(null);
       } else {
         const finalScore = nextAnswers.filter((a) => a.isCorrect).length;
-        saveQuizResult(finalScore).catch(console.error);
+        useUserStore.getState().updateQuizStats(finalScore).catch(console.error);
         setQuizFinished(true);
-        logActivity().catch(console.error); // Log again on quiz completion
+        useUserStore.getState().updateStreak().catch(console.error); // Log again on quiz completion
       }
     }, 800);
   };
