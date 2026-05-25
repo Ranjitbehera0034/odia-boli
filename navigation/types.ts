@@ -6,7 +6,7 @@ export type MainTabParamList = {
   Home: undefined;
   Translate: undefined;
   Practice: undefined;
-  Saved: undefined;
+  League: undefined;
   Settings: undefined;
 };
 
@@ -36,8 +36,8 @@ export type PracticeScreenNavigationProp = CompositeNavigationProp<
   NativeStackNavigationProp<RootStackParamList>
 >;
 
-export type SavedScreenNavigationProp = CompositeNavigationProp<
-  BottomTabNavigationProp<MainTabParamList, 'Saved'>,
+export type LeagueScreenNavigationProp = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList, 'League'>,
   NativeStackNavigationProp<RootStackParamList>
 >;
 

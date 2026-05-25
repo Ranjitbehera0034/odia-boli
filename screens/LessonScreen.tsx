@@ -18,6 +18,7 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import * as Speech from 'expo-speech';
 import { CURRICULUM, Exercise, Lesson } from '../services/curriculumData';
 import { completeLesson, getUserProfile, updateUserProfile, deductHeart, refillHeartsFull, checkAndApplyHeartsRefill } from '../services/curriculum';
+import { addLeagueXp } from '../services/league';
 import { logActivity } from '../services/streak';
 import { isFuzzyMatch, generateWordDiff, DiffWord } from '../services/diff';
 import { getLevelInfo } from '../services/levelSystem';
@@ -227,6 +228,7 @@ export default function LessonScreen() {
       
       setTotalXp(newXp);
       await updateUserProfile(newXp, newInfo.level);
+      await addLeagueXp(amount); // track weekly XP for league
       
       if (newInfo.level > oldInfo.level) {
         setLevelUpInfo({ oldLevel: oldInfo.level, newLevel: newInfo.level });

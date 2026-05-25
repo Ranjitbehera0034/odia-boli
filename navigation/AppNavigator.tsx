@@ -10,7 +10,7 @@ import { useThemeColor } from '../hooks/useThemeColor';
 import HomeScreen from '../screens/HomeScreen';
 import TranslateScreen from '../screens/TranslateScreen';
 import PracticeScreen from '../screens/PracticeScreen';
-import SavedScreen from '../screens/SavedScreen';
+import LeagueScreen from '../screens/LeagueScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import DetailsScreen from '../screens/DetailsScreen';
 import FlashcardScreen from '../screens/FlashcardScreen';
@@ -89,11 +89,11 @@ function TabNavigator() {
         }}
       />
       <Tab.Screen
-        name="Saved"
-        component={SavedScreen}
+        name="League"
+        component={LeagueScreen}
         options={{
-          title: 'Saved',
-          tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>★</Text>,
+          title: 'League',
+          tabBarIcon: ({ color }) => <Text style={{ fontSize: 20, color }}>🏆</Text>,
         }}
       />
       <Tab.Screen

@@ -8,6 +8,7 @@ import AppNavigator from './navigation/AppNavigator';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { initSRSDatabase } from './services/srs';
 import { initCurriculumDatabase } from './services/curriculum';
+import { initLeagueDatabase } from './services/league';
 import { StreakProvider } from './services/StreakContext';
 
 // Keep the splash screen visible while we fetch resources
@@ -23,6 +24,7 @@ export default function App() {
         // Initialize SQLite databases
         await initSRSDatabase();
         await initCurriculumDatabase();
+        await initLeagueDatabase();
 
         // Fetch onboarding flag
         const onboardingCompleted = await AsyncStorage.getItem('@odia_agent:onboarding_completed');
