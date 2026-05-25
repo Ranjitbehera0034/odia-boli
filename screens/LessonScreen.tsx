@@ -63,6 +63,8 @@ export default function LessonScreen() {
   const [hearts, setHearts] = useState(5);
   const [showHeartsModal, setShowHeartsModal] = useState(false);
   const [mascotState, setMascotState] = useState<MascotState>('idle');
+  const [timeTaken, setTimeTaken] = useState(0); // seconds
+  const lessonStartTime = useRef<number>(Date.now());
 
   // Match the pairs state
   const [shuffledOdia, setShuffledOdia] = useState<{ id: string; text: string }[]>([]);
@@ -132,6 +134,8 @@ export default function LessonScreen() {
       Alert.alert('Error', 'Lesson not found.');
       navigation.goBack();
     }
+    // Start lesson timer
+    lessonStartTime.current = Date.now();
     setLoading(false);
   }, [lessonId]);
 
@@ -335,6 +339,7 @@ export default function LessonScreen() {
 
       setShowCelebration(true);
       setMascotState('celebrate');
+      setTimeTaken(Math.round((Date.now() - lessonStartTime.current) / 1000));
     }
   };
 
@@ -766,45 +771,167 @@ export default function LessonScreen() {
   };
 
   if (showCelebration) {
+    const totalExercises = lesson.exercises.length;
+    const accuracy = Math.round((score / totalExercises) * 100);
+    const isPerfect = score === totalExercises;
+    const mins = Math.floor(timeTaken / 60);
+    const secs = timeTaken % 60;
+    const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+
+    // Find next lesson in curriculum
+    let nextLessonId: string | null = null;
+    outer: for (let ui = 0; ui < CURRICULUM.length; ui++) {
+      const unit = CURRICULUM[ui];
+      for (let li = 0; li < unit.lessons.length; li++) {
+        if (unit.lessons[li].id === lessonId) {
+          if (li + 1 < unit.lessons.length) {
+            nextLessonId = unit.lessons[li + 1].id;
+          } else if (ui + 1 < CURRICULUM.length) {
+            nextLessonId = CURRICULUM[ui + 1].lessons[0].id;
+          }
+          break outer;
+        }
+      }
+    }
+
+    const handlePracticeAgain = () => {
+      // Reset all lesson state and restart
+      setCurrentIndex(0);
+      setScore(0);
+      setEarnedXp(0);
+      setShowCelebration(false);
+      setMascotState('idle');
+      setIsAnswerChecked(false);
+      setIsAnswerCorrect(false);
+      setSelectedOption(null);
+      setSelectedJumbleWords([]);
+      setTextInputValue('');
+      lessonStartTime.current = Date.now();
+    };
+
+    const handleNextLesson = () => {
+      if (nextLessonId) {
+        navigation.replace('Lesson', { lessonId: nextLessonId });
+      } else {
+        navigation.goBack();
+      }
+    };
+
     return (
       <View style={styles.celebrationContainer}>
-        <PeacockMascot state="celebrate" size={130} />
-        <Text style={styles.celebEmoji}>🎉</Text>
-        <Text style={styles.celebTitle}>Lesson Completed!</Text>
-        <Text style={styles.celebSubtitle}>{lesson.title}</Text>
+        {/* Lottie confetti — fullscreen overlay */}
+        <LottieView
+          source={require('../assets/animations/confetti.json')}
+          autoPlay
+          loop={false}
+          style={styles.confettiLottie}
+          resizeMode="cover"
+        />
 
-        <RNView style={[styles.celebCard, { backgroundColor: cardCol, borderColor: borderCol }]}>
-          <RNView style={[styles.scoreBadgeContainer, { backgroundColor: tintCol + '15' }]}>
-            <Text style={[styles.celebScore, { color: tintCol }]}>
-              {score} / {lesson.exercises.length}
-            </Text>
-            <Text style={styles.scoreDetailText}>Correct Answers</Text>
-          </RNView>
+        {/* Stars burst for perfect lesson */}
+        {isPerfect && (
+          <LottieView
+            source={require('../assets/animations/stars.json')}
+            autoPlay
+            loop={false}
+            style={styles.starsLottie}
+            resizeMode="contain"
+          />
+        )}
 
-          <RNView style={styles.celebXpRow}>
-            <Text style={styles.celebXpLabel}>XP Earned:</Text>
-            <Text style={[styles.celebXpValue, { color: '#E2B13C' }]}>+ {earnedXp} XP</Text>
-          </RNView>
-          {score === lesson.exercises.length && (
-            <Text style={styles.celebXpBonusText}>✨ Includes +20 XP Perfect Lesson Bonus! ✨</Text>
+        <ScrollView
+          contentContainerStyle={styles.celebScrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Mascot */}
+          <PeacockMascot state="celebrate" size={120} />
+
+          {/* Perfect badge */}
+          {isPerfect && (
+            <RNView style={styles.perfectBadge}>
+              <Text style={styles.perfectBadgeText}>⭐ PERFECT LESSON ⭐</Text>
+            </RNView>
           )}
 
-          <Text style={[styles.motivationText, { marginTop: Theme.spacing.md }]}>
-            {score === lesson.exercises.length
-              ? 'Flawless victory! You are mastering Odia!'
-              : score >= lesson.exercises.length - 2
-              ? 'Great job! You have solid comprehension.'
-              : 'Good effort! Keep practicing to master these phrases.'}
-          </Text>
-        </RNView>
+          <Text style={styles.celebTitle}>Lesson Complete!</Text>
+          <Text style={styles.celebSubtitle}>{lesson.title}</Text>
 
-        <TouchableOpacity
-          activeOpacity={0.8}
-          onPress={() => navigation.goBack()}
-          style={[styles.finishButton, { backgroundColor: tintCol }]}
-        >
-          <Text style={styles.finishButtonText}>Return to Curriculum</Text>
-        </TouchableOpacity>
+          {/* Stats grid */}
+          <RNView style={[styles.celebCard, { backgroundColor: cardCol, borderColor: borderCol }]}>
+
+            {/* Accuracy row */}
+            <RNView style={styles.celebStatRow}>
+              <RNView style={[styles.celebStatBox, { backgroundColor: tintCol + '12', borderColor: tintCol + '30' }]}>
+                <Text style={styles.celebStatIcon}>🎯</Text>
+                <Text style={[styles.celebStatValue, { color: tintCol }]}>{accuracy}%</Text>
+                <Text style={styles.celebStatLabel}>Accuracy</Text>
+              </RNView>
+
+              <RNView style={[styles.celebStatBox, { backgroundColor: '#10B98112', borderColor: '#10B98130' }]}>
+                <Text style={styles.celebStatIcon}>✅</Text>
+                <Text style={[styles.celebStatValue, { color: '#10B981' }]}>{score}/{totalExercises}</Text>
+                <Text style={styles.celebStatLabel}>Correct</Text>
+              </RNView>
+
+              <RNView style={[styles.celebStatBox, { backgroundColor: '#6366F112', borderColor: '#6366F130' }]}>
+                <Text style={styles.celebStatIcon}>⏱️</Text>
+                <Text style={[styles.celebStatValue, { color: '#6366F1' }]}>{timeStr}</Text>
+                <Text style={styles.celebStatLabel}>Time</Text>
+              </RNView>
+            </RNView>
+
+            {/* XP earned */}
+            <RNView style={[styles.xpEarnedRow, { backgroundColor: '#F59E0B12', borderColor: '#F59E0B30' }]}>
+              <Text style={styles.xpEarnedIcon}>🏆</Text>
+              <RNView>
+                <Text style={styles.xpEarnedValue}>+{earnedXp} XP earned</Text>
+                {isPerfect && (
+                  <Text style={styles.xpBonusNote}>Includes +20 XP Perfect Bonus!</Text>
+                )}
+              </RNView>
+            </RNView>
+
+            {/* Motivational message */}
+            <Text style={styles.motivationText}>
+              {isPerfect
+                ? '🌟 Flawless! You are mastering Odia!'
+                : accuracy >= 80
+                ? '💪 Great work! Keep up the momentum.'
+                : accuracy >= 50
+                ? '👍 Good effort! Practice makes perfect.'
+                : '📚 Keep going — every lesson makes you stronger!'}
+            </Text>
+          </RNView>
+
+          {/* Action buttons */}
+          <RNView style={styles.celebBtns}>
+            {nextLessonId ? (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={handleNextLesson}
+                style={[styles.celebPrimaryBtn, { backgroundColor: tintCol }]}
+              >
+                <Text style={styles.celebPrimaryBtnText}>Continue →</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => navigation.goBack()}
+                style={[styles.celebPrimaryBtn, { backgroundColor: tintCol }]}
+              >
+                <Text style={styles.celebPrimaryBtnText}>Finish 🎓</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              activeOpacity={0.8}
+              onPress={handlePracticeAgain}
+              style={[styles.celebSecondaryBtn, { borderColor: tintCol }]}
+            >
+              <Text style={[styles.celebSecondaryBtnText, { color: tintCol }]}>🔁 Practice Again</Text>
+            </TouchableOpacity>
+          </RNView>
+        </ScrollView>
       </View>
     );
   }
@@ -1423,54 +1550,120 @@ const styles = StyleSheet.create({
   },
   celebrationContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: Theme.spacing.xxl,
   },
-  celebEmoji: {
-    fontSize: 64,
-    marginBottom: Theme.spacing.md,
+  confettiLottie: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0, bottom: 0,
+    zIndex: 0,
+    pointerEvents: 'none',
+  },
+  starsLottie: {
+    position: 'absolute',
+    top: '10%',
+    alignSelf: 'center',
+    width: 280,
+    height: 280,
+    zIndex: 1,
+    pointerEvents: 'none',
+  },
+  celebScrollContent: {
+    flexGrow: 1,
+    alignItems: 'center',
+    paddingHorizontal: Theme.spacing.xl,
+    paddingTop: Theme.spacing.xxl,
+    paddingBottom: Theme.spacing.xxl + 20,
+    zIndex: 2,
+  },
+  perfectBadge: {
+    backgroundColor: '#F59E0B',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    marginTop: 8,
+    marginBottom: 4,
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  perfectBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
   celebTitle: {
     fontSize: Theme.typography.fontSize.xxl - 2,
     fontWeight: Theme.typography.fontWeight.heavy,
     textAlign: 'center',
+    marginTop: 10,
   },
   celebSubtitle: {
     fontSize: Theme.typography.fontSize.md,
     color: '#6B7280',
     fontWeight: '500',
-    marginBottom: Theme.spacing.xl,
+    marginBottom: Theme.spacing.lg,
     textAlign: 'center',
   },
   celebCard: {
     borderWidth: 1.5,
     borderRadius: Theme.borderRadius.xl,
-    padding: Theme.spacing.xl,
+    padding: Theme.spacing.lg,
     width: '100%',
     alignItems: 'center',
-    marginBottom: Theme.spacing.xxl,
+    marginBottom: Theme.spacing.xl,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
     shadowRadius: 10,
     elevation: 3,
+    gap: 14,
   },
-  scoreBadgeContainer: {
-    paddingVertical: Theme.spacing.md,
-    paddingHorizontal: Theme.spacing.xl,
-    borderRadius: Theme.borderRadius.xl,
+  celebStatRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+  },
+  celebStatBox: {
+    flex: 1,
     alignItems: 'center',
-    marginBottom: Theme.spacing.lg,
+    borderWidth: 1,
+    borderRadius: Theme.borderRadius.lg,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
+    gap: 3,
   },
-  celebScore: {
-    fontSize: 32,
-    fontWeight: Theme.typography.fontWeight.heavy,
+  celebStatIcon: { fontSize: 22 },
+  celebStatValue: {
+    fontSize: 16,
+    fontWeight: '800',
   },
-  scoreDetailText: {
-    fontSize: Theme.typography.fontSize.xs,
+  celebStatLabel: {
+    fontSize: 10,
     color: '#6B7280',
-    fontWeight: 'bold',
+    fontWeight: '600',
+  },
+  xpEarnedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: Theme.borderRadius.lg,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    width: '100%',
+  },
+  xpEarnedIcon: { fontSize: 26 },
+  xpEarnedValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#D97706',
+  },
+  xpBonusNote: {
+    fontSize: 11,
+    color: '#F59E0B',
+    fontWeight: '600',
     marginTop: 2,
   },
   motivationText: {
@@ -1479,21 +1672,54 @@ const styles = StyleSheet.create({
     lineHeight: Theme.typography.lineHeight.sm,
     color: '#4B5563',
   },
-  finishButton: {
+  celebBtns: {
+    width: '100%',
+    gap: 10,
+    marginTop: 4,
+  },
+  celebPrimaryBtn: {
     width: '100%',
     borderRadius: Theme.borderRadius.lg,
-    paddingVertical: Theme.spacing.md,
-    justifyContent: 'center',
+    paddingVertical: 15,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  finishButtonText: {
+  celebPrimaryBtnText: {
     color: '#FFFFFF',
     fontSize: Theme.typography.fontSize.md,
-    fontWeight: 'bold',
+    fontWeight: '800',
+    letterSpacing: 0.5,
   },
+  celebSecondaryBtn: {
+    width: '100%',
+    borderRadius: Theme.borderRadius.lg,
+    paddingVertical: 13,
+    alignItems: 'center',
+    borderWidth: 2,
+    backgroundColor: 'transparent',
+  },
+  celebSecondaryBtnText: {
+    fontSize: Theme.typography.fontSize.md,
+    fontWeight: '700',
+  },
+  // Legacy (kept for safety, no longer rendered)
+  celebEmoji: { fontSize: 64 },
+  scoreBadgeContainer: {},
+  celebScore: { fontSize: 32 },
+  scoreDetailText: { fontSize: 11 },
+  finishButton: { width: '100%' },
+  finishButtonText: { color: '#fff' },
+  celebXpRow: { flexDirection: 'row' as const },
+  celebXpLabel: { fontSize: 14 },
+  celebXpValue: { fontSize: 16 },
+  celebXpBonusText: { fontSize: 10 },
   diffContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
     marginTop: 4,
     backgroundColor: 'transparent',
   },
@@ -1503,29 +1729,7 @@ const styles = StyleSheet.create({
   diffWordText: {
     fontSize: Theme.typography.fontSize.md - 1,
   },
-  celebXpRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Theme.spacing.sm,
-    backgroundColor: 'transparent',
-  },
-  celebXpLabel: {
-    fontSize: Theme.typography.fontSize.sm,
-    fontWeight: 'bold',
-    marginRight: 6,
-  },
-  celebXpValue: {
-    fontSize: Theme.typography.fontSize.sm + 2,
-    fontWeight: '800',
-  },
-  celebXpBonusText: {
-    fontSize: 10,
-    color: '#E2B13C',
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: Theme.spacing.sm,
-  },
+
   listenTypeContainer: {
     backgroundColor: 'transparent',
   },
