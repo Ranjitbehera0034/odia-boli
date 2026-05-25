@@ -5,6 +5,15 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/c59d6386-7f59-4f65-b40c-d131f172f87c",
+      "enabled": true,
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
@@ -36,7 +45,8 @@
     "plugins": [
       "expo-splash-screen",
       "expo-dev-client",
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-updates"
     ],
     "extra": {
       "eas": {
