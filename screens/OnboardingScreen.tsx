@@ -1,168 +1,406 @@
-import React, { useState } from 'react';
-import { StyleSheet, TouchableOpacity, Image, View as RNView, Dimensions } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { StyleSheet, TouchableOpacity, View as RNView, Dimensions, Animated } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
+import LottieView from 'lottie-react-native';
+
 import { Text, View } from '../components/Themed';
 import { useThemeColor } from '../hooks/useThemeColor';
 import Theme from '../constants/Theme';
+import PeacockMascot, { MascotState } from '../components/PeacockMascot';
+import { PLACEMENT_QUESTIONS, getPlacementUnit } from '../services/placementTest';
+import { completeLesson, updateUserProfile, getUserProfile } from '../services/curriculum';
+import { addLeagueXp } from '../services/league';
+import { getLevelInfo } from '../services/levelSystem';
 
 const { width } = Dimensions.get('window');
 
+type ScreenState = 'intro' | 'quiz' | 'results';
+
 export default function OnboardingScreen() {
   const navigation = useNavigation<any>();
-  const [currentStep, setCurrentStep] = useState(0);
+  const [screenState, setScreenState] = useState<ScreenState>('intro');
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  const [isAnswerChecked, setIsAnswerChecked] = useState(false);
+  const [score, setScore] = useState(0);
+  const [mascotState, setMascotState] = useState<MascotState>('idle');
+  const [isCompleting, setIsCompleting] = useState(false);
 
+  // Theme colors
   const cardCol = useThemeColor({}, 'card');
   const borderCol = useThemeColor({}, 'border');
   const tintCol = useThemeColor({}, 'tint');
+  const textCol = useThemeColor({}, 'text');
+  const textMutedCol = useThemeColor({}, 'textMuted');
 
-  const handleNext = () => {
-    if (currentStep < 2) {
-      setCurrentStep(currentStep + 1);
-    } else {
-      handleComplete();
+  // Animation values for transition
+  const fadeAnim = useRef(new Animated.Value(1)).current;
+  const progressAnim = useRef(new Animated.Value(0)).current;
+
+  const currentQuestion = PLACEMENT_QUESTIONS[currentQuestionIndex];
+
+  // Animate question progress bar
+  useEffect(() => {
+    if (screenState === 'quiz') {
+      Animated.timing(progressAnim, {
+        toValue: (currentQuestionIndex + 1) / PLACEMENT_QUESTIONS.length,
+        duration: 300,
+        useNativeDriver: false,
+      }).start();
     }
+  }, [currentQuestionIndex, screenState]);
+
+  // Handle transition between states/questions with fade animation
+  const transitionTo = (nextState: () => void) => {
+    Animated.timing(fadeAnim, {
+      toValue: 0,
+      duration: 150,
+      useNativeDriver: true,
+    }).start(() => {
+      nextState();
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 150,
+        useNativeDriver: true,
+      }).start();
+    });
   };
 
-  const handleBack = () => {
-    if (currentStep > 0) {
-      setCurrentStep(currentStep - 1);
-    }
+  const handleStartTest = () => {
+    transitionTo(() => {
+      setScreenState('quiz');
+      setCurrentQuestionIndex(0);
+      setSelectedOption(null);
+      setIsAnswerChecked(false);
+      setScore(0);
+      setMascotState('idle');
+    });
   };
 
-  const handleSkip = () => {
-    setCurrentStep(2);
-  };
-
-  const handleComplete = async () => {
+  const handleSkipTest = async () => {
+    setIsCompleting(true);
     try {
       await AsyncStorage.setItem('@odia_agent:onboarding_completed', 'true');
-      // Reset navigation stack to MainTabs
       navigation.reset({
         index: 0,
         routes: [{ name: 'MainTabs' }],
       });
     } catch (e) {
-      console.error('Failed to complete onboarding:', e);
+      console.error('Failed to complete onboarding directly:', e);
+    } finally {
+      setIsCompleting(false);
     }
   };
 
-  const renderStepContent = () => {
-    switch (currentStep) {
-      case 0:
-        return (
-          <RNView style={styles.stepContainer}>
-            <Image source={require('../assets/icon.png')} style={styles.logo} />
-            <Text style={styles.title}>Welcome to Odia Agent</Text>
-            <Text style={styles.description}>
-              Explore the beauty of the Odia language and Odisha's rich cultural heritage. Master everyday conversations through interactive translation tools.
-            </Text>
-          </RNView>
-        );
-      case 1:
-        return (
-          <RNView style={styles.stepContainer}>
-            <Text style={styles.title}>Features & Tools</Text>
-            <Text style={styles.subtitle}>Here is how you can use the app to learn:</Text>
+  const handleSelectOption = (option: string) => {
+    if (isAnswerChecked) return;
+    setSelectedOption(option);
+  };
 
-            <RNView style={styles.featuresList}>
-              <RNView style={[styles.featureRow, { backgroundColor: cardCol, borderColor: borderCol }]}>
-                <Text style={styles.featureIcon}>🗣️</Text>
-                <RNView style={styles.featureTextContainer}>
-                  <Text style={styles.featureTitle}>Translate & Speak</Text>
-                  <Text style={styles.featureDesc}>Get instant translations and phonetic pronunciation guides. Play and pause audio synthesis.</Text>
-                </RNView>
-              </RNView>
+  const handleCheckAnswer = () => {
+    if (!selectedOption || isAnswerChecked) return;
 
-              <RNView style={[styles.featureRow, { backgroundColor: cardCol, borderColor: borderCol }]}>
-                <Text style={styles.featureIcon}>🗂️</Text>
-                <RNView style={styles.featureTextContainer}>
-                  <Text style={styles.featureTitle}>Study Flashcards</Text>
-                  <Text style={styles.featureDesc}>Swipe cards to memorize daily-use phrases and log your learning progress locally.</Text>
-                </RNView>
-              </RNView>
+    const isCorrect = selectedOption === currentQuestion.english;
+    setIsAnswerChecked(true);
 
-              <RNView style={[styles.featureRow, { backgroundColor: cardCol, borderColor: borderCol }]}>
-                <Text style={styles.featureIcon}>📝</Text>
-                <RNView style={styles.featureTextContainer}>
-                  <Text style={styles.featureTitle}>Quiz Challenges</Text>
-                  <Text style={styles.featureDesc}>Test your vocabulary with multiple choice questions, and build daily study streaks.</Text>
-                </RNView>
-              </RNView>
-            </RNView>
-          </RNView>
-        );
-      case 2:
-        return (
-          <RNView style={styles.stepContainer}>
-            <Text style={styles.congratulationsEmoji}>🎯</Text>
-            <Text style={styles.title}>Ready to Begin?</Text>
-            <Text style={styles.description}>
-              Your progress will be saved automatically, and you can track your heatmaps directly in settings. Start practicing today!
-            </Text>
-          </RNView>
-        );
-      default:
-        return null;
+    if (isCorrect) {
+      setScore((prev) => prev + 1);
+      setMascotState('happy');
+    } else {
+      setMascotState('sad');
     }
+  };
+
+  const handleContinue = () => {
+    if (currentQuestionIndex < PLACEMENT_QUESTIONS.length - 1) {
+      transitionTo(() => {
+        setCurrentQuestionIndex((prev) => prev + 1);
+        setSelectedOption(null);
+        setIsAnswerChecked(false);
+        setMascotState('idle');
+      });
+    } else {
+      transitionTo(() => {
+        setScreenState('results');
+        setMascotState('celebrate');
+      });
+    }
+  };
+
+  const handleFinish = async () => {
+    setIsCompleting(true);
+    const placedUnit = getPlacementUnit(score);
+
+    try {
+      // 1. Mark lessons completed in SQLite based on placement
+      if (placedUnit === 2) {
+        // Skip Unit 1 (lessons u1_l1, u1_l2)
+        await completeLesson('u1_l1', 1, 11);
+        await completeLesson('u1_l2', 1, 11);
+        
+        // Award 100 XP
+        const profile = await getUserProfile();
+        const newXp = profile.xp + 100;
+        const newLevelInfo = getLevelInfo(newXp);
+        await updateUserProfile(newXp, newLevelInfo.level);
+        await addLeagueXp(100);
+      } else if (placedUnit === 3) {
+        // Skip Unit 1 & Unit 2 (lessons u1_l1, u1_l2, u2_l1, u2_l2)
+        await completeLesson('u1_l1', 1, 11);
+        await completeLesson('u1_l2', 1, 11);
+        await completeLesson('u2_l1', 2, 11);
+        await completeLesson('u2_l2', 2, 11);
+        
+        // Award 200 XP
+        const profile = await getUserProfile();
+        const newXp = profile.xp + 200;
+        const newLevelInfo = getLevelInfo(newXp);
+        await updateUserProfile(newXp, newLevelInfo.level);
+        await addLeagueXp(200);
+      }
+
+      // 2. Set onboarding completed flag
+      await AsyncStorage.setItem('@odia_agent:onboarding_completed', 'true');
+
+      // 3. Reset stack to MainTabs
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'MainTabs' }],
+      });
+    } catch (e) {
+      console.error('Failed to save placement progress:', e);
+    } finally {
+      setIsCompleting(false);
+    }
+  };
+
+  const renderIntro = () => (
+    <Animated.View style={[styles.stepContainer, { opacity: fadeAnim }]}>
+      <RNView style={styles.mascotContainer}>
+        <PeacockMascot state={mascotState} size={150} />
+      </RNView>
+      <Text style={styles.title}>Let's see what you know!</Text>
+      <Text style={[styles.description, { color: textMutedCol }]}>
+        Take a quick 10-question placement test. We will place you at the right unit and skip lessons you already know so you don't get bored.
+      </Text>
+
+      <RNView style={styles.introButtonContainer}>
+        <TouchableOpacity
+          activeOpacity={0.85}
+          style={[styles.primaryButton, { backgroundColor: tintCol }]}
+          onPress={handleStartTest}
+        >
+          <Text style={styles.primaryButtonText}>Take Placement Test</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          activeOpacity={0.7}
+          style={[styles.secondaryButton, { borderColor: borderCol }]}
+          onPress={handleSkipTest}
+          disabled={isCompleting}
+        >
+          <Text style={[styles.secondaryButtonText, { color: tintCol }]}>Start from Scratch (Beginner)</Text>
+        </TouchableOpacity>
+      </RNView>
+    </Animated.View>
+  );
+
+  const renderQuiz = () => {
+    const isCorrect = selectedOption === currentQuestion?.english;
+    const progressWidth = progressAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: ['0%', '100%'],
+    });
+
+    return (
+      <Animated.View style={[styles.quizContainer, { opacity: fadeAnim }]}>
+        {/* Progress header */}
+        <RNView style={styles.quizHeader}>
+          <Text style={[styles.progressText, { color: textMutedCol }]}>
+            Question {currentQuestionIndex + 1} of {PLACEMENT_QUESTIONS.length}
+          </Text>
+          <RNView style={[styles.progressBarBackground, { backgroundColor: borderCol }]}>
+            <Animated.View style={[styles.progressBarFill, { backgroundColor: tintCol, width: progressWidth }]} />
+          </RNView>
+        </RNView>
+
+        {/* Mascot reacting */}
+        <RNView style={styles.mascotQuizContainer}>
+          <PeacockMascot state={mascotState} size={110} />
+        </RNView>
+
+        {/* Question Card */}
+        <RNView style={[styles.questionCard, { backgroundColor: cardCol, borderColor: borderCol }]}>
+          <Text style={[styles.questionLabel, { color: textMutedCol }]}>What is the English translation for:</Text>
+          <Text style={[styles.questionOdia, { color: textCol }]}>{currentQuestion?.odia}</Text>
+        </RNView>
+
+        {/* Options */}
+        <RNView style={styles.optionsContainer}>
+          {currentQuestion?.options.map((option) => {
+            const isSelected = selectedOption === option;
+            let optionStyle = {};
+            let textStyle = {};
+
+            if (isAnswerChecked) {
+              if (option === currentQuestion.english) {
+                optionStyle = { backgroundColor: '#E8F5E9', borderColor: '#4CAF50', borderWidth: 2 };
+                textStyle = { color: '#2E7D32', fontWeight: 'bold' };
+              } else if (isSelected) {
+                optionStyle = { backgroundColor: '#FFEBEE', borderColor: '#F44336', borderWidth: 2 };
+                textStyle = { color: '#C62828', fontWeight: 'bold' };
+              } else {
+                optionStyle = { opacity: 0.6, borderColor: borderCol };
+              }
+            } else if (isSelected) {
+              optionStyle = { borderColor: tintCol, borderWidth: 2, backgroundColor: cardCol };
+              textStyle = { color: tintCol, fontWeight: 'bold' };
+            } else {
+              optionStyle = { borderColor: borderCol, backgroundColor: cardCol };
+            }
+
+            return (
+              <TouchableOpacity
+                key={option}
+                activeOpacity={0.8}
+                style={[styles.optionButton, optionStyle]}
+                onPress={() => handleSelectOption(option)}
+                disabled={isAnswerChecked}
+              >
+                <Text style={[styles.optionText, { color: textCol }, textStyle]}>{option}</Text>
+                {isAnswerChecked && option === currentQuestion.english && (
+                  <Text style={styles.checkIndicator}>✓</Text>
+                )}
+                {isAnswerChecked && isSelected && option !== currentQuestion.english && (
+                  <Text style={[styles.checkIndicator, { color: '#F44336' }]}>✗</Text>
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </RNView>
+
+        {/* Bottom Panel */}
+        <RNView style={styles.bottomBar}>
+          {!isAnswerChecked ? (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              style={[
+                styles.actionButton,
+                { backgroundColor: selectedOption ? tintCol : borderCol }
+              ]}
+              onPress={handleCheckAnswer}
+              disabled={!selectedOption}
+            >
+              <Text style={styles.actionButtonText}>Check</Text>
+            </TouchableOpacity>
+          ) : (
+            <RNView style={[
+              styles.feedbackBanner,
+              { backgroundColor: isCorrect ? '#E8F5E9' : '#FFEBEE', borderColor: isCorrect ? '#C8E6C9' : '#FFCDD2' }
+            ]}>
+              <RNView style={styles.feedbackTextContainer}>
+                <Text style={[styles.feedbackTitle, { color: isCorrect ? '#2E7D32' : '#C62828' }]}>
+                  {isCorrect ? 'Correct! 🎉' : 'Incorrect 💔'}
+                </Text>
+                {!isCorrect && (
+                  <Text style={[styles.feedbackDetail, { color: '#C62828' }]}>
+                    Correct answer: {currentQuestion.english}
+                  </Text>
+                )}
+              </RNView>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                style={[styles.actionButton, { backgroundColor: isCorrect ? '#4CAF50' : '#F44336', marginTop: 0, width: 120 }]}
+                onPress={handleContinue}
+              >
+                <Text style={styles.actionButtonText}>Continue</Text>
+              </TouchableOpacity>
+            </RNView>
+          )}
+        </RNView>
+      </Animated.View>
+    );
+  };
+
+  const renderResults = () => {
+    const placedUnit = getPlacementUnit(score);
+    let placementTitle = '';
+    let placementDesc = '';
+    let unlockedItems: string[] = [];
+
+    if (placedUnit === 1) {
+      placementTitle = 'Unit 1: Greetings';
+      placementDesc = "We recommend starting from the absolute basics to build a strong foundation in Odia.";
+      unlockedItems = ['👋 Hello & Welcome', '🗣️ Basic Phrases'];
+    } else if (placedUnit === 2) {
+      placementTitle = 'Unit 2: Numbers';
+      placementDesc = "Excellent! You skipped Unit 1 (Greetings) and will start learning numbers and counting.";
+      unlockedItems = ['👋 Unit 1 (Completed & Skipped)', '🔢 Unit 2: Numbers (Active)'];
+    } else {
+      placementTitle = 'Unit 3: Family';
+      placementDesc = "Wow, you already know a lot! You skipped Unit 1 and 2, and will start directly at Family terms.";
+      unlockedItems = [
+        '👋 Unit 1 (Completed & Skipped)',
+        '🔢 Unit 2 (Completed & Skipped)',
+        '👪 Unit 3: Family (Active)'
+      ];
+    }
+
+    return (
+      <Animated.View style={[styles.resultsContainer, { opacity: fadeAnim }]}>
+        {/* Fullscreen Lottie confetti */}
+        <LottieView
+          source={require('../assets/animations/confetti.json')}
+          autoPlay
+          loop={false}
+          style={styles.confettiLottie}
+          resizeMode="cover"
+        />
+
+        <RNView style={styles.mascotResultsContainer}>
+          <PeacockMascot state={mascotState} size={160} />
+        </RNView>
+
+        <Text style={styles.resultsScore}>You scored {score} / 10!</Text>
+        <Text style={styles.resultsPlacementHeader}>Your Placement:</Text>
+        <Text style={[styles.resultsPlacementTitle, { color: tintCol }]}>{placementTitle}</Text>
+        <Text style={[styles.resultsPlacementDesc, { color: textMutedCol }]}>{placementDesc}</Text>
+
+        <RNView style={[styles.unlockedBox, { backgroundColor: cardCol, borderColor: borderCol }]}>
+          <Text style={styles.unlockedTitle}>Placement Breakdown:</Text>
+          {unlockedItems.map((item, idx) => (
+            <Text key={idx} style={[styles.unlockedItem, { color: textCol }]}>
+              {item}
+            </Text>
+          ))}
+          {placedUnit > 1 && (
+            <Text style={[styles.xpBonusText, { color: '#4CAF50' }]}>
+              🎁 Starter Bonus: +{placedUnit === 2 ? '100' : '200'} XP & Level 2!
+            </Text>
+          )}
+        </RNView>
+
+        <TouchableOpacity
+          activeOpacity={0.85}
+          style={[styles.primaryButton, { backgroundColor: tintCol, marginTop: Theme.spacing.xl, width: '100%' }]}
+          onPress={handleFinish}
+          disabled={isCompleting}
+        >
+          <Text style={styles.primaryButtonText}>
+            {isCompleting ? 'Saving...' : 'Start Learning!'}
+          </Text>
+        </TouchableOpacity>
+      </Animated.View>
+    );
   };
 
   return (
     <View style={styles.container}>
-      {/* Top action header */}
-      <RNView style={styles.header}>
-        {currentStep < 2 ? (
-          <TouchableOpacity onPress={handleSkip} activeOpacity={0.7} style={styles.skipButton}>
-            <Text style={[styles.skipText, { color: tintCol }]}>Skip</Text>
-          </TouchableOpacity>
-        ) : (
-          <RNView style={styles.headerSpacer} />
-        )}
-      </RNView>
-
-      {/* Main Slide Container */}
-      <RNView style={styles.body}>{renderStepContent()}</RNView>
-
-      {/* Footer controls */}
-      <RNView style={styles.footer}>
-        {/* Page dot indicator */}
-        <RNView style={styles.indicatorContainer}>
-          {[0, 1, 2].map((index) => (
-            <RNView
-              key={index}
-              style={[
-                styles.dot,
-                { backgroundColor: borderCol },
-                currentStep === index && { backgroundColor: tintCol, width: 20 },
-              ]}
-            />
-          ))}
-        </RNView>
-
-        {/* Buttons */}
-        <RNView style={styles.buttonRow}>
-          {currentStep > 0 ? (
-            <TouchableOpacity
-              activeOpacity={0.8}
-              style={[styles.navButton, styles.backButton, { borderColor: tintCol }]}
-              onPress={handleBack}
-            >
-              <Text style={[styles.navButtonText, { color: tintCol }]}>Back</Text>
-            </TouchableOpacity>
-          ) : (
-            <RNView style={styles.navButtonPlaceholder} />
-          )}
-
-          <TouchableOpacity
-            activeOpacity={0.85}
-            style={[styles.navButton, styles.nextButton, { backgroundColor: tintCol }]}
-            onPress={handleNext}
-          >
-            <Text style={styles.nextButtonText}>
-              {currentStep === 2 ? 'Get Started' : 'Next'}
-            </Text>
-          </TouchableOpacity>
-        </RNView>
+      <RNView style={styles.body}>
+        {screenState === 'intro' && renderIntro()}
+        {screenState === 'quiz' && renderQuiz()}
+        {screenState === 'results' && renderResults()}
       </RNView>
     </View>
   );
@@ -171,26 +409,7 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'space-between',
     paddingVertical: Theme.spacing.xxl,
-  },
-  header: {
-    height: 40,
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    paddingHorizontal: Theme.spacing.xl,
-    alignItems: 'center',
-  },
-  headerSpacer: {
-    height: 40,
-  },
-  skipButton: {
-    paddingVertical: Theme.spacing.xs,
-    paddingHorizontal: Theme.spacing.md,
-  },
-  skipText: {
-    fontSize: Theme.typography.fontSize.sm,
-    fontWeight: Theme.typography.fontWeight.bold,
   },
   body: {
     flex: 1,
@@ -203,123 +422,235 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: '100%',
   },
-  logo: {
-    width: 140,
-    height: 140,
-    borderRadius: Theme.borderRadius.lg + 4,
-    marginBottom: Theme.spacing.xl,
+  mascotContainer: {
+    marginBottom: Theme.spacing.xxl,
+    alignItems: 'center',
   },
   title: {
-    fontSize: Theme.typography.fontSize.xxl - 2,
+    fontSize: Theme.typography.fontSize.xxl,
     fontWeight: Theme.typography.fontWeight.bold,
     textAlign: 'center',
     marginBottom: Theme.spacing.md,
-    lineHeight: Theme.typography.lineHeight.xxl,
-  },
-  subtitle: {
-    fontSize: Theme.typography.fontSize.sm,
-    color: '#6B7280',
-    textAlign: 'center',
-    marginBottom: Theme.spacing.lg,
   },
   description: {
-    fontSize: Theme.typography.fontSize.sm + 1,
-    color: '#4B5563',
+    fontSize: Theme.typography.fontSize.md,
     textAlign: 'center',
     lineHeight: Theme.typography.lineHeight.md + 2,
-    paddingHorizontal: Theme.spacing.sm,
+    marginBottom: Theme.spacing.xxl,
+    paddingHorizontal: Theme.spacing.md,
   },
-  featuresList: {
+  introButtonContainer: {
     width: '100%',
-    marginTop: Theme.spacing.sm,
+    gap: Theme.spacing.md,
   },
-  featureRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: Theme.borderRadius.lg,
-    padding: Theme.spacing.md,
-    marginBottom: Theme.spacing.md,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.01,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  featureIcon: {
-    fontSize: 28,
-    marginRight: Theme.spacing.md,
-  },
-  featureTextContainer: {
-    flex: 1,
-  },
-  featureTitle: {
-    fontSize: Theme.typography.fontSize.sm + 1,
-    fontWeight: Theme.typography.fontWeight.bold,
-    marginBottom: 2,
-  },
-  featureDesc: {
-    fontSize: Theme.typography.fontSize.xs,
-    color: '#6B7280',
-    lineHeight: Theme.typography.lineHeight.xs + 2,
-  },
-  congratulationsEmoji: {
-    fontSize: 64,
-    marginBottom: Theme.spacing.xl,
-  },
-  footer: {
-    paddingHorizontal: Theme.spacing.xl,
-    alignItems: 'center',
-    marginTop: Theme.spacing.lg,
-  },
-  indicatorContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Theme.spacing.xl,
-  },
-  dot: {
-    height: 8,
-    width: 8,
-    borderRadius: 4,
-    marginHorizontal: 4,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    paddingBottom: Theme.spacing.md,
-  },
-  navButton: {
+  primaryButton: {
     borderRadius: Theme.borderRadius.md,
-    paddingVertical: Theme.spacing.md - 2,
+    paddingVertical: Theme.spacing.md + 2,
     alignItems: 'center',
     justifyContent: 'center',
-    flex: 1,
-  },
-  backButton: {
-    borderWidth: 1,
-    backgroundColor: 'transparent',
-    marginRight: Theme.spacing.md,
-  },
-  navButtonPlaceholder: {
-    flex: 1,
-    marginRight: Theme.spacing.md,
-  },
-  nextButton: {
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
   },
-  navButtonText: {
+  primaryButtonText: {
+    color: '#FFFFFF',
+    fontSize: Theme.typography.fontSize.md,
+    fontWeight: Theme.typography.fontWeight.bold,
+  },
+  secondaryButton: {
+    borderRadius: Theme.borderRadius.md,
+    paddingVertical: Theme.spacing.md + 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    backgroundColor: 'transparent',
+  },
+  secondaryButtonText: {
+    fontSize: Theme.typography.fontSize.md,
+    fontWeight: Theme.typography.fontWeight.bold,
+  },
+  quizContainer: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'space-between',
+  },
+  quizHeader: {
+    width: '100%',
+    marginTop: Theme.spacing.md,
+    marginBottom: Theme.spacing.sm,
+  },
+  progressText: {
+    fontSize: Theme.typography.fontSize.sm,
+    fontWeight: Theme.typography.fontWeight.semibold,
+    marginBottom: Theme.spacing.xs,
+  },
+  progressBarBackground: {
+    height: 8,
+    borderRadius: 4,
+    width: '100%',
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  mascotQuizContainer: {
+    alignItems: 'center',
+    marginVertical: Theme.spacing.sm,
+  },
+  questionCard: {
+    borderWidth: 1,
+    borderRadius: Theme.borderRadius.lg,
+    padding: Theme.spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+    marginBottom: Theme.spacing.md,
+  },
+  questionLabel: {
+    fontSize: Theme.typography.fontSize.xs + 1,
+    fontWeight: Theme.typography.fontWeight.semibold,
+    marginBottom: Theme.spacing.sm,
+    textTransform: 'uppercase',
+  },
+  questionOdia: {
+    fontSize: Theme.typography.fontSize.xxxl - 4,
+    fontWeight: Theme.typography.fontWeight.bold,
+  },
+  optionsContainer: {
+    width: '100%',
+    gap: Theme.spacing.md,
+    marginBottom: Theme.spacing.xl,
+  },
+  optionButton: {
+    borderRadius: Theme.borderRadius.md,
+    paddingVertical: Theme.spacing.lg,
+    paddingHorizontal: Theme.spacing.xl,
+    borderWidth: 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.02,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  optionText: {
+    fontSize: Theme.typography.fontSize.md + 1,
+    fontWeight: Theme.typography.fontWeight.semibold,
+  },
+  checkIndicator: {
+    fontSize: Theme.typography.fontSize.xl,
+    fontWeight: 'bold',
+    color: '#4CAF50',
+  },
+  bottomBar: {
+    width: '100%',
+    minHeight: 80,
+    justifyContent: 'center',
+    marginBottom: Theme.spacing.md,
+  },
+  actionButton: {
+    borderRadius: Theme.borderRadius.md,
+    paddingVertical: Theme.spacing.md + 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+  },
+  actionButtonText: {
+    color: '#FFFFFF',
+    fontSize: Theme.typography.fontSize.md,
+    fontWeight: Theme.typography.fontWeight.bold,
+  },
+  feedbackBanner: {
+    borderWidth: 1,
+    borderRadius: Theme.borderRadius.md,
+    padding: Theme.spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+  },
+  feedbackTextContainer: {
+    flex: 1,
+    marginRight: Theme.spacing.md,
+  },
+  feedbackTitle: {
+    fontSize: Theme.typography.fontSize.md,
+    fontWeight: Theme.typography.fontWeight.bold,
+    marginBottom: 2,
+  },
+  feedbackDetail: {
+    fontSize: Theme.typography.fontSize.sm,
+    fontWeight: Theme.typography.fontWeight.semibold,
+  },
+  resultsContainer: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confettiLottie: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 10,
+    pointerEvents: 'none',
+  },
+  mascotResultsContainer: {
+    marginBottom: Theme.spacing.lg,
+  },
+  resultsScore: {
+    fontSize: Theme.typography.fontSize.xl,
+    fontWeight: Theme.typography.fontWeight.bold,
+    color: '#4CAF50',
+    marginBottom: Theme.spacing.sm,
+  },
+  resultsPlacementHeader: {
+    fontSize: Theme.typography.fontSize.md,
+    fontWeight: Theme.typography.fontWeight.semibold,
+    color: '#6B7280',
+  },
+  resultsPlacementTitle: {
+    fontSize: Theme.typography.fontSize.xxl + 2,
+    fontWeight: Theme.typography.fontWeight.bold,
+    marginVertical: Theme.spacing.xs,
+  },
+  resultsPlacementDesc: {
+    fontSize: Theme.typography.fontSize.md - 1,
+    textAlign: 'center',
+    paddingHorizontal: Theme.spacing.xl,
+    lineHeight: Theme.typography.lineHeight.md,
+    marginBottom: Theme.spacing.xl,
+  },
+  unlockedBox: {
+    width: '100%',
+    borderWidth: 1.5,
+    borderRadius: Theme.borderRadius.lg,
+    padding: Theme.spacing.xl,
+    gap: Theme.spacing.sm,
+  },
+  unlockedTitle: {
+    fontSize: Theme.typography.fontSize.md - 1,
+    fontWeight: Theme.typography.fontWeight.bold,
+    marginBottom: Theme.spacing.xs,
+  },
+  unlockedItem: {
     fontSize: Theme.typography.fontSize.md - 1,
     fontWeight: Theme.typography.fontWeight.semibold,
   },
-  nextButtonText: {
-    color: '#FFFFFF',
-    fontSize: Theme.typography.fontSize.md - 1,
-    fontWeight: Theme.typography.fontWeight.semibold,
+  xpBonusText: {
+    fontSize: Theme.typography.fontSize.sm + 1,
+    fontWeight: Theme.typography.fontWeight.bold,
+    marginTop: Theme.spacing.sm,
   },
 });
