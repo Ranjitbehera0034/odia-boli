@@ -13,7 +13,7 @@ import { useProgressStore } from '../stores/useProgressStore';
 
 const { width } = Dimensions.get('window');
 
-type ScreenState = 'intro' | 'quiz' | 'results';
+type ScreenState = 'intro' | 'quiz' | 'results' | 'interests';
 
 export default function OnboardingScreen() {
   const navigation = useNavigation<any>();
@@ -24,6 +24,7 @@ export default function OnboardingScreen() {
   const [score, setScore] = useState(0);
   const [mascotState, setMascotState] = useState<MascotState>('idle');
   const [isCompleting, setIsCompleting] = useState(false);
+  const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
 
   // Theme colors
   const cardCol = useThemeColor({}, 'card');
@@ -81,9 +82,9 @@ export default function OnboardingScreen() {
     try {
       await useUserStore.getState().completeOnboarding(1, 0);
       await useUserStore.getState().loadUser();
-      navigation.reset({
-        index: 0,
-        routes: [{ name: 'MainTabs' }],
+      transitionTo(() => {
+        setScreenState('interests');
+        setMascotState('idle');
       });
     } catch (e) {
       console.error('Failed to complete onboarding directly:', e);
@@ -130,11 +131,11 @@ export default function OnboardingScreen() {
   const handleFinish = async () => {
     setIsCompleting(true);
     const placedUnit = getPlacementUnit(score);
-
+ 
     try {
       const userStore = useUserStore.getState();
       const progressStore = useProgressStore.getState();
-
+ 
       // 1. Mark lessons completed in SQLite based on placement
       if (placedUnit === 2) {
         // Skip Unit 1 (lessons u1_l1, u1_l2)
@@ -149,21 +150,37 @@ export default function OnboardingScreen() {
         await progressStore.completeLesson('u2_l2', 2, 11);
         await userStore.addXp(200, 'Placement Test Skip (Unit 1 & 2)');
       }
-
+ 
       // 2. Set onboarding completed flag
       await userStore.completeOnboarding(placedUnit, score);
       
       // Reload stores to make sure everything is up-to-date
       await userStore.loadUser();
       await progressStore.loadProgress();
-
-      // 3. Reset stack to MainTabs
+ 
+      transitionTo(() => {
+        setScreenState('interests');
+        setMascotState('idle');
+      });
+    } catch (e) {
+      console.error('Failed to save placement progress:', e);
+    } finally {
+      setIsCompleting(false);
+    }
+  };
+ 
+  const handleSaveInterests = async () => {
+    if (selectedInterests.length === 0) return;
+    setIsCompleting(true);
+    try {
+      const userStore = useUserStore.getState();
+      await userStore.updateProfile({ interests: selectedInterests });
       navigation.reset({
         index: 0,
         routes: [{ name: 'MainTabs' }],
       });
     } catch (e) {
-      console.error('Failed to save placement progress:', e);
+      console.error('Failed to save user interests:', e);
     } finally {
       setIsCompleting(false);
     }
@@ -388,13 +405,83 @@ export default function OnboardingScreen() {
       </Animated.View>
     );
   };
-
+ 
+  const renderInterests = () => {
+    const interestOptions = [
+      { id: 'sports', label: 'Sports', emoji: '⚽' },
+      { id: 'food', label: 'Food', emoji: '🍔' },
+      { id: 'travel', label: 'Travel', emoji: '✈️' },
+      { id: 'business', label: 'Business', emoji: '💼' },
+    ];
+ 
+    const toggleInterest = (id: string) => {
+      setSelectedInterests((prev) =>
+        prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
+      );
+    };
+ 
+    return (
+      <Animated.View style={[styles.stepContainer, { opacity: fadeAnim }]}>
+        <RNView style={styles.mascotContainer}>
+          <PeacockMascot state="happy" size={130} />
+        </RNView>
+        <Text style={styles.title}>What are your interests?</Text>
+        <Text style={[styles.description, { color: textMutedCol, marginBottom: Theme.spacing.lg }]}>
+          Select one or more topics. We'll generate custom English pronunciation challenges tailored to your interests!
+        </Text>
+ 
+        <RNView style={styles.interestsGrid}>
+          {interestOptions.map((opt) => {
+            const isSelected = selectedInterests.includes(opt.id);
+            return (
+              <TouchableOpacity
+                key={opt.id}
+                activeOpacity={0.8}
+                onPress={() => toggleInterest(opt.id)}
+                style={[
+                  styles.interestCard,
+                  {
+                    backgroundColor: cardCol,
+                    borderColor: isSelected ? tintCol : borderCol,
+                    borderWidth: isSelected ? 2 : 1,
+                  },
+                ]}
+              >
+                <Text style={styles.interestEmoji}>{opt.emoji}</Text>
+                <Text style={[styles.interestLabel, { color: textCol }]}>{opt.label}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </RNView>
+ 
+        <TouchableOpacity
+          activeOpacity={0.85}
+          style={[
+            styles.primaryButton,
+            {
+              backgroundColor: selectedInterests.length > 0 ? tintCol : borderCol,
+              marginTop: Theme.spacing.xl,
+              width: '100%',
+            },
+          ]}
+          onPress={handleSaveInterests}
+          disabled={selectedInterests.length === 0 || isCompleting}
+        >
+          <Text style={styles.primaryButtonText}>
+            {isCompleting ? 'Saving...' : 'Finish & Start Learning!'}
+          </Text>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
+ 
   return (
     <View style={styles.container}>
       <RNView style={styles.body}>
         {screenState === 'intro' && renderIntro()}
         {screenState === 'quiz' && renderQuiz()}
         {screenState === 'results' && renderResults()}
+        {screenState === 'interests' && renderInterests()}
       </RNView>
     </View>
   );
@@ -646,5 +733,35 @@ const styles = StyleSheet.create({
     fontSize: Theme.typography.fontSize.sm + 1,
     fontWeight: Theme.typography.fontWeight.bold,
     marginTop: Theme.spacing.sm,
+  },
+  interestsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginVertical: Theme.spacing.lg,
+  },
+  interestCard: {
+    width: '47%',
+    height: 110,
+    borderRadius: Theme.borderRadius.lg,
+    borderWidth: 1,
+    padding: Theme.spacing.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Theme.spacing.md,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.02,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  interestEmoji: {
+    fontSize: 32,
+    marginBottom: Theme.spacing.xs,
+  },
+  interestLabel: {
+    fontSize: Theme.typography.fontSize.sm + 1,
+    fontWeight: '700',
   },
 });

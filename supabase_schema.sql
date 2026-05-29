@@ -17,6 +17,15 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   quizzes_taken integer NOT NULL DEFAULT 0,
   quiz_high_score integer NOT NULL DEFAULT 0,
   onboarding_completed boolean NOT NULL DEFAULT false,
+  bio text,
+  location text,
+  native_language text,
+  learning_goal text,
+  longest_streak integer NOT NULL DEFAULT 0,
+  is_public boolean NOT NULL DEFAULT true,
+  badges jsonb NOT NULL DEFAULT '[]'::jsonb,
+  interests text,
+  created_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
   updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
@@ -72,8 +81,10 @@ CREATE TABLE IF NOT EXISTS public.leagues (
   user_id uuid PRIMARY KEY REFERENCES public.profiles(id) ON DELETE CASCADE,
   league_tier text NOT NULL DEFAULT 'Bronze',
   weekly_xp integer NOT NULL DEFAULT 0,
+  previous_rank integer,
   updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
 
 -- 7. Friendships Table (tracks user connections for the social layer)
 CREATE TABLE IF NOT EXISTS public.friendships (
@@ -100,6 +111,16 @@ CREATE TABLE IF NOT EXISTS public.challenges (
   updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
+-- 9. Pronunciation Scores Table (tracks scores per word)
+CREATE TABLE IF NOT EXISTS public.pronunciation_scores (
+  user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  word text NOT NULL,
+  score integer NOT NULL,
+  feedback text,
+  updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+  PRIMARY KEY (user_id, word)
+);
+
 -- ==========================================
 -- Enable Row Level Security (RLS)
 -- ==========================================
@@ -111,6 +132,7 @@ ALTER TABLE public.xp_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.leagues ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.friendships ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.challenges ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.pronunciation_scores ENABLE ROW LEVEL SECURITY;
 
 -- ==========================================
 -- Row Level Security (RLS) Policies
@@ -199,6 +221,19 @@ CREATE POLICY "Users can create challenges" ON public.challenges
 CREATE POLICY "Users can update challenges they are part of" ON public.challenges
   FOR UPDATE USING (auth.uid() = challenger_id OR auth.uid() = challengee_id);
 
+-- 9. Pronunciation Scores Policies
+CREATE POLICY "Users can view their own pronunciation scores" ON public.pronunciation_scores
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert their own pronunciation scores" ON public.pronunciation_scores
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update their own pronunciation scores" ON public.pronunciation_scores
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete their own pronunciation scores" ON public.pronunciation_scores
+  FOR DELETE USING (auth.uid() = user_id);
+
 -- ==========================================
 -- Triggers for Automated Synchronization
 -- ==========================================
@@ -234,3 +269,86 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 CREATE OR REPLACE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- Add gems column to public.profiles
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS gems integer NOT NULL DEFAULT 0;
+
+-- 11. Daily Challenges Table (stores generated challenges for each calendar date)
+CREATE TABLE IF NOT EXISTS public.daily_challenges (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  description text NOT NULL,
+  type text NOT NULL,
+  target_count integer NOT NULL,
+  reward_xp integer NOT NULL DEFAULT 15,
+  reward_gems integer NOT NULL DEFAULT 5,
+  date date NOT NULL,
+  challenge_index integer NOT NULL,
+  CONSTRAINT unique_date_index UNIQUE (date, challenge_index)
+);
+
+-- 12. User Daily Challenges Table (tracks per-user challenge progress)
+CREATE TABLE IF NOT EXISTS public.user_daily_challenges (
+  user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  challenge_id uuid NOT NULL REFERENCES public.daily_challenges(id) ON DELETE CASCADE,
+  current_progress integer NOT NULL DEFAULT 0,
+  is_completed boolean NOT NULL DEFAULT false,
+  date date NOT NULL,
+  updated_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+  PRIMARY KEY (user_id, challenge_id)
+);
+
+-- 13. User Daily Chest Table (tracks if chest was claimed for date)
+CREATE TABLE IF NOT EXISTS public.user_daily_chest (
+  user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  date date NOT NULL,
+  is_claimed boolean NOT NULL DEFAULT false,
+  claimed_at timestamp with time zone DEFAULT timezone('utc'::text, now()) NOT NULL,
+  PRIMARY KEY (user_id, date)
+);
+
+-- Enable RLS
+ALTER TABLE public.daily_challenges ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_daily_challenges ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_daily_chest ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies
+CREATE POLICY "Daily challenges are viewable by everyone" ON public.daily_challenges
+  FOR SELECT USING (true);
+
+CREATE POLICY "Users can manage their own daily challenges" ON public.user_daily_challenges
+  FOR ALL USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can manage their own daily chests" ON public.user_daily_chest
+  FOR ALL USING (auth.uid() = user_id);
+
+-- Generator Function
+CREATE OR REPLACE FUNCTION public.generate_daily_challenges(target_date date)
+RETURNS void AS $$
+DECLARE
+  template_record RECORD;
+  idx integer := 0;
+BEGIN
+  -- Delete existing challenges for target_date
+  DELETE FROM public.daily_challenges WHERE date = target_date;
+
+  -- Pick 3 random templates from the pool
+  FOR template_record IN 
+    SELECT * FROM (
+      VALUES 
+        ('Complete 2 lessons', 'lessons_completed', 2, 25, 8),
+        ('Translate 5 sentences', 'translate_sentence', 5, 20, 5),
+        ('Get 3 correct exercises in a row', 'streak_exercises', 3, 20, 5),
+        ('Practice pronunciation for 3 words', 'pronunciation_count', 3, 20, 5),
+        ('Earn 50 XP today', 'xp_earned', 50, 30, 10),
+        ('Review 10 flashcards', 'flashcards_reviewed', 10, 20, 5),
+        ('Complete 1 Quiz challenge', 'quiz_completed', 1, 25, 8)
+    ) AS t(description, type, target_count, reward_xp, reward_gems)
+    ORDER BY random()
+    LIMIT 3
+  LOOP
+    INSERT INTO public.daily_challenges (description, type, target_count, reward_xp, reward_gems, date, challenge_index)
+    VALUES (template_record.description, template_record.type, template_record.target_count, template_record.reward_xp, template_record.reward_gems, target_date, idx);
+    idx := idx + 1;
+  END LOOP;
+END;
+$$ LANGUAGE plpgsql;

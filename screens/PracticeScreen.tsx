@@ -129,6 +129,32 @@ export default function PracticeScreen() {
         <Text style={[styles.bannerArrow, { color: tintCol }]}>→</Text>
       </TouchableOpacity>
 
+      {/* AI Conversation Partner Banner */}
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => navigation.navigate('AiChat')}
+        style={[styles.studyBanner, { backgroundColor: tintCol + '15', borderColor: tintCol, marginTop: Theme.spacing.sm }]}
+      >
+        <RNView style={styles.bannerTextContainer}>
+          <Text style={[styles.bannerTitle, { color: tintCol }]}>🤖 Speak with AI Tutor</Text>
+          <Text style={styles.bannerSubtitle}>Practice your conversational English with an AI voice partner.</Text>
+        </RNView>
+        <Text style={[styles.bannerArrow, { color: tintCol }]}>→</Text>
+      </TouchableOpacity>
+
+      {/* AI Pronunciation Coach Banner */}
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onPress={() => navigation.navigate('PronunciationCoach')}
+        style={[styles.studyBanner, { backgroundColor: tintCol + '15', borderColor: tintCol, marginTop: Theme.spacing.sm }]}
+      >
+        <RNView style={styles.bannerTextContainer}>
+          <Text style={[styles.bannerTitle, { color: tintCol }]}>🗣️ AI Pronunciation Coach</Text>
+          <Text style={styles.bannerSubtitle}>Speak English sentences and get instant feedback on your accent.</Text>
+        </RNView>
+        <Text style={[styles.bannerArrow, { color: tintCol }]}>→</Text>
+      </TouchableOpacity>
+
       {/* Category selector */}
       <RNView style={[styles.filterBar, { borderBottomColor: borderCol }]}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>

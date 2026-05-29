@@ -51,6 +51,7 @@ export default function CurriculumScreen() {
   const hearts = useUserStore((state) => state.hearts);
   const units = useLessonStore((state) => state.units);
   const lessonProgresses = useProgressStore((state) => state.lessonProgress);
+  const recommendedLessons = useProgressStore((state) => state.recommendedLessons || []);
   const storeLoading = useUserStore((state) => state.loading) || useProgressStore((state) => state.loading);
 
   const [loading, setLoading] = useState(true);
@@ -243,6 +244,11 @@ export default function CurriculumScreen() {
           const icon = UNIT_THEME_ICONS[unit.id] || '🌟';
           const progress = unitProgresses[unit.id] || { progressPercent: 0, completedLessonsCount: 0, totalLessonsCount: 0 };
 
+          // Partition lessons to push recommended review lessons to the top of this unit
+          const recommended = unit.lessons.filter((l) => recommendedLessons.includes(l.id));
+          const other = unit.lessons.filter((l) => !recommendedLessons.includes(l.id));
+          const orderedLessons = [...recommended, ...other];
+
           return (
             <RNView key={unit.id} style={styles.unitSection}>
               {/* Unit Header Band */}
@@ -270,7 +276,7 @@ export default function CurriculumScreen() {
                 {/* Background Connecting vertical dotted line */}
                 <RNView style={[styles.dottedLine, { borderColor: color + '40' }]} />
 
-                {unit.lessons.map((lesson, idx) => {
+                {orderedLessons.map((lesson, idx) => {
                   const state = lessonStates[lesson.id] || 'locked';
                   const xOffset = getXOffset(idx);
                   const isCompleted = state === 'completed';
