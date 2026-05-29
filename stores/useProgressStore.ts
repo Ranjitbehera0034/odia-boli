@@ -1,6 +1,20 @@
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getDB } from '../services/srs';
 import { PRACTICAL_PHRASES } from '../services/phrases';
+import { CURRICULUM } from '../services/curriculumData';
+import { Challenge, generateSmartSentences } from '../services/gemini';
+
+// Lazy sync trigger — avoids circular dependency with useSyncStore
+const triggerSync = () => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { useSyncStore } = require('./useSyncStore') as any;
+    useSyncStore.getState().sync().catch(console.error);
+  } catch (e) {
+    console.warn('Sync trigger skipped:', e);
+  }
+};
 
 export interface LessonProgressRow {
   lessonId: string;
@@ -68,6 +82,15 @@ export interface ProgressStoreState {
   resetSRSCards: () => Promise<void>;
   getTranslationFromCache: (odiaText: string) => Promise<any | null>;
   saveTranslationToCache: (odiaText: string, result: any) => Promise<void>;
+  weakAreas: string[];
+  recommendedLessons: string[];
+  focusVocabulary: string[];
+  loadPersonalization: () => Promise<void>;
+  generatePersonalization: () => Promise<void>;
+  smartSentences: Challenge[];
+  isGeneratingSmartSentences: boolean;
+  loadSmartSentences: () => Promise<void>;
+  generateSmartSentencesAction: (force?: boolean) => Promise<void>;
 }
 
 export const useProgressStore = create<ProgressStoreState>((set, get) => ({
@@ -78,10 +101,21 @@ export const useProgressStore = create<ProgressStoreState>((set, get) => ({
   translationHistory: [],
   savedTranslations: [],
   loading: true,
+  weakAreas: [],
+  recommendedLessons: [],
+  focusVocabulary: [],
+  smartSentences: [],
+  isGeneratingSmartSentences: false,
 
   loadProgress: async () => {
     try {
       const db = getDB();
+
+      // Load personalization recommendations
+      await get().loadPersonalization();
+ 
+      // Load smart sentences
+      await get().loadSmartSentences();
 
       // 1. Fetch lesson progress
       const progressRows = await db.getAllAsync<any>('SELECT * FROM progress;');
@@ -169,13 +203,14 @@ export const useProgressStore = create<ProgressStoreState>((set, get) => ({
       const now = Date.now();
 
       await db.runAsync(
-        `INSERT INTO progress (lesson_id, unit_id, is_completed, score, completed_at)
-         VALUES (?, ?, 1, ?, ?)
+        `INSERT INTO progress (lesson_id, unit_id, is_completed, score, completed_at, updated_at)
+         VALUES (?, ?, 1, ?, ?, ?)
          ON CONFLICT(lesson_id) DO UPDATE SET
            is_completed = 1,
            score = MAX(score, excluded.score),
-           completed_at = excluded.completed_at;`,
-        [lessonId, unitId, score, now]
+           completed_at = excluded.completed_at,
+           updated_at = excluded.updated_at;`,
+        [lessonId, unitId, score, now, now, now]
       );
 
       set((state) => {
@@ -190,6 +225,25 @@ export const useProgressStore = create<ProgressStoreState>((set, get) => ({
         };
         return { lessonProgress: updated };
       });
+
+      // Trigger sync
+      triggerSync();
+
+      // Check if we should trigger personalization analysis (every 5 lessons)
+      const completedCountRow = await db.getFirstAsync<{ count: number }>(
+        'SELECT COUNT(*) as count FROM progress WHERE is_completed = 1;'
+      );
+      const totalCompleted = completedCountRow?.count || 0;
+
+      const lastAnalyzedStr = await AsyncStorage.getItem('@odia_agent:last_analyzed_lessons_count');
+      const lastAnalyzed = lastAnalyzedStr ? parseInt(lastAnalyzedStr, 10) : 0;
+
+      if (totalCompleted > 0 && totalCompleted - lastAnalyzed >= 5) {
+        console.log(`[Personalization] ${totalCompleted - lastAnalyzed} lessons completed since last analysis. Triggering personalization...`);
+        get().generatePersonalization().then(async () => {
+          await AsyncStorage.setItem('@odia_agent:last_analyzed_lessons_count', String(totalCompleted));
+        }).catch(console.error);
+      }
     } catch (e) {
       console.error('Failed to save completed lesson progress:', e);
     }
@@ -200,8 +254,8 @@ export const useProgressStore = create<ProgressStoreState>((set, get) => ({
       const db = getDB();
       const now = Date.now();
       await db.runAsync(
-        'UPDATE vocabulary SET is_learned = 1, learned_at = ? WHERE id = ?;',
-        [now, id]
+        'UPDATE vocabulary SET is_learned = 1, learned_at = ?, updated_at = ? WHERE id = ?;',
+        [now, now, id]
       );
 
       set((state) => ({
@@ -209,6 +263,9 @@ export const useProgressStore = create<ProgressStoreState>((set, get) => ({
           item.id === id ? { ...item, isLearned: true, learnedAt: now } : item
         ),
       }));
+
+      // Recalculate badges (will trigger sync automatically)
+      import('./useUserStore').then((m) => m.useUserStore.getState().recalculateBadges().catch(console.error));
     } catch (e) {
       console.error('Failed to mark vocabulary as learned:', e);
     }
@@ -222,18 +279,21 @@ export const useProgressStore = create<ProgressStoreState>((set, get) => ({
       if (!item) return;
 
       const newIsSaved = !item.isSaved;
-      const now = newIsSaved ? Date.now() : null;
+      const now = Date.now();
 
       await db.runAsync(
-        'UPDATE vocabulary SET is_saved = ?, saved_at = ? WHERE id = ?;',
-        [newIsSaved ? 1 : 0, now, id]
+        'UPDATE vocabulary SET is_saved = ?, saved_at = ?, updated_at = ? WHERE id = ?;',
+        [newIsSaved ? 1 : 0, newIsSaved ? now : null, now, id]
       );
 
       set((state) => ({
         vocabulary: state.vocabulary.map((v) =>
-          v.id === id ? { ...v, isSaved: newIsSaved, savedAt: now } : v
+          v.id === id ? { ...v, isSaved: newIsSaved, savedAt: newIsSaved ? now : null } : v
         ),
       }));
+
+      // Recalculate badges (will trigger sync automatically)
+      import('./useUserStore').then((m) => m.useUserStore.getState().recalculateBadges().catch(console.error));
     } catch (e) {
       console.error('Failed to toggle save on vocabulary item:', e);
     }
@@ -279,6 +339,9 @@ export const useProgressStore = create<ProgressStoreState>((set, get) => ({
       );
       if (matchedVocab) {
         await get().toggleSaveVocabularyItem(matchedVocab.id);
+      } else {
+        // If not a vocabulary item, we still recalculate badges to check for the 'word_collector' badge
+        import('./useUserStore').then((m) => m.useUserStore.getState().recalculateBadges().catch(console.error));
       }
     } catch (e) {
       console.error('Failed to toggle save on translation:', e);
@@ -434,6 +497,8 @@ export const useProgressStore = create<ProgressStoreState>((set, get) => ({
 
       // Reload
       await get().loadProgress();
+      // Recalculate badges
+      import('./useUserStore').then((m) => m.useUserStore.getState().recalculateBadges().catch(console.error));
     } catch (e) {
       console.error('Failed to reset progress in SQLite:', e);
     }
@@ -490,6 +555,191 @@ export const useProgressStore = create<ProgressStoreState>((set, get) => ({
       }
     } catch (e) {
       console.error('Failed to save translation to cache:', e);
+    }
+  },
+
+  loadPersonalization: async () => {
+    try {
+      const stored = await AsyncStorage.getItem('@odia_agent:personalization_recommendations');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        set({
+          weakAreas: parsed.weakAreas || [],
+          recommendedLessons: parsed.recommendedLessons || [],
+          focusVocabulary: parsed.focusVocabulary || [],
+        });
+      }
+    } catch (e) {
+      console.error('Failed to load personalization recommendations from AsyncStorage:', e);
+    }
+  },
+
+  generatePersonalization: async () => {
+    try {
+      const db = getDB();
+      
+      // Query last 20 mistakes from mistake_log
+      const mistakes = await db.getAllAsync<any>(
+        'SELECT question, correct_answer, user_answer FROM mistake_log ORDER BY timestamp DESC LIMIT 20;'
+      );
+
+      if (mistakes.length === 0) {
+        console.log('[Personalization] No mistakes logged yet. Skipping analysis.');
+        return;
+      }
+
+      const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+      if (!apiKey) {
+        console.warn('Gemini API key is missing. Skipping personalization analysis.');
+        return;
+      }
+
+      console.log(`[Personalization] Compiling prompt with ${mistakes.length} mistakes for Gemini...`);
+
+      const prompt = `You are an AI language learning assistant analyzing Odia learner mistakes.
+Identify the top 3 weak areas, recommend specific lesson IDs to review (select strictly from the list of available lesson IDs below), and suggest 5 vocabulary words to focus on.
+Return STRICTLY a JSON object matching this structure:
+{
+  "weakAreas": ["Verb Conjugations", "Plural Forms", "Shopping Vocabulary"],
+  "recommendedLessons": ["lesson_1_2", "lesson_2_3"],
+  "focusVocabulary": ["dhanyabaada", "namaste", "ghara", "khaiba", "pani"]
+}
+
+Available lessons to recommend (select from these IDs):
+${CURRICULUM.map(unit => unit.lessons.map(l => `- ${l.id} (${l.title}: ${l.description})`).join('\n')).join('\n')}
+
+Mistake log (last 20 incorrect answers):
+${JSON.stringify(mistakes, null, 2)}`;
+
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: prompt,
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.2,
+              responseMimeType: 'application/json',
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Gemini API error during personalization: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!rawText) {
+        throw new Error('Received empty response from Gemini personalization.');
+      }
+
+      const parsed = JSON.parse(rawText.trim());
+      
+      // Save recommendations to AsyncStorage
+      await AsyncStorage.setItem(
+        '@odia_agent:personalization_recommendations',
+        JSON.stringify(parsed)
+      );
+
+      set({
+        weakAreas: parsed.weakAreas || [],
+        recommendedLessons: parsed.recommendedLessons || [],
+        focusVocabulary: parsed.focusVocabulary || [],
+      });
+
+      console.log('[Personalization] Successfully generated and stored recommendations.');
+    } catch (err) {
+      console.error('[Personalization] Failed to generate personalization:', err);
+    }
+  },
+ 
+  loadSmartSentences: async () => {
+    try {
+      const db = getDB();
+      const rows = await db.getAllAsync<any>(
+        'SELECT * FROM generated_sentences ORDER BY created_at DESC;'
+      );
+ 
+      const sentences: Challenge[] = rows.map((row) => ({
+        id: row.id,
+        text: row.text,
+        focus: row.focus,
+        odia: row.odia,
+        difficulty: row.difficulty as 'Easy' | 'Medium' | 'Hard',
+      }));
+ 
+      set({ smartSentences: sentences });
+ 
+      // Check if we need to regenerate (empty or older than 7 days)
+      const oldestRecord = rows[0];
+      const isExpired = oldestRecord ? (Date.now() - oldestRecord.created_at) > (7 * 24 * 60 * 60 * 1000) : true;
+ 
+      if (sentences.length === 0 || isExpired) {
+        console.log('[SmartSentences] Cache empty or expired, triggering regeneration...');
+        await get().generateSmartSentencesAction();
+      }
+    } catch (e) {
+      console.error('[SmartSentences] Failed to load smart sentences:', e);
+    }
+  },
+ 
+  generateSmartSentencesAction: async (force = false) => {
+    const { isGeneratingSmartSentences } = get();
+    if (isGeneratingSmartSentences && !force) return;
+ 
+    set({ isGeneratingSmartSentences: true });
+ 
+    try {
+      const db = getDB();
+      const { useUserStore } = require('./useUserStore');
+      const userState = useUserStore.getState();
+      
+      const interests = userState.interests || [];
+      const weakAreas = get().weakAreas || [];
+      const level = userState.level || 1;
+ 
+      // Query recent mistakes from SQLite
+      const recentMistakes = await db.getAllAsync<{ question: string; correct_answer: string }>(
+        'SELECT question, correct_answer FROM mistake_log ORDER BY timestamp DESC LIMIT 5;'
+      );
+ 
+      const interestsToUse = interests.length > 0 ? interests : ['general', 'travel', 'food'];
+ 
+      const result = await generateSmartSentences(interestsToUse, weakAreas, level, recentMistakes);
+ 
+      if (result && result.length > 0) {
+        // Clear old generated sentences
+        await db.runAsync('DELETE FROM generated_sentences;');
+ 
+        const now = Date.now();
+        for (const item of result) {
+          await db.runAsync(
+            `INSERT OR REPLACE INTO generated_sentences (id, text, focus, odia, difficulty, created_at)
+             VALUES (?, ?, ?, ?, ?, ?);`,
+            [item.id || Math.random().toString(36).substring(2, 9), item.text, item.focus, item.odia, item.difficulty, now]
+          );
+        }
+ 
+        set({ smartSentences: result });
+        console.log('[SmartSentences] Successfully generated and cached sentences.');
+      }
+    } catch (e) {
+      console.error('[SmartSentences] Failed to generate smart sentences:', e);
+    } finally {
+      set({ isGeneratingSmartSentences: false });
     }
   },
 }));
