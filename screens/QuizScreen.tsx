@@ -6,6 +6,7 @@ import { PRACTICAL_PHRASES, Phrase } from '../services/phrases';
 import { useThemeColor } from '../hooks/useThemeColor';
 import Theme from '../constants/Theme';
 import { useNavigation } from '@react-navigation/native';
+import { useChallengeStore } from '../stores/useChallengeStore';
 
 interface QuizQuestion {
   id: string;
@@ -93,6 +94,8 @@ export default function QuizScreen() {
       } else {
         const finalScore = nextAnswers.filter((a) => a.isCorrect).length;
         useUserStore.getState().updateQuizStats(finalScore).catch(console.error);
+        // Daily challenge: completing a quiz
+        useChallengeStore.getState().incrementProgress('quiz_completed', 1).catch(console.error);
         setQuizFinished(true);
         useUserStore.getState().updateStreak().catch(console.error); // Log again on quiz completion
       }

@@ -13,6 +13,7 @@ import { useThemeColor } from '../hooks/useThemeColor';
 import Theme from '../constants/Theme';
 import { useProgressStore, SRSCard } from '../stores/useProgressStore';
 import { useUserStore } from '../stores/useUserStore';
+import { useChallengeStore } from '../stores/useChallengeStore';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -91,7 +92,10 @@ export default function FlashcardScreen() {
       // 2. Track activity streak
       useUserStore.getState().updateStreak().catch(console.error);
 
-      // 3. Reset card orientation/pan coordinates for the incoming card
+      // 3. Daily challenge progress — every card rated counts as one review
+      useChallengeStore.getState().incrementProgress('flashcards_reviewed', 1).catch(console.error);
+
+      // 4. Reset card orientation/pan coordinates for the incoming card
       setFlipped(false);
       flipAnim.setValue(0);
       pan.setValue({ x: 0, y: 0 });

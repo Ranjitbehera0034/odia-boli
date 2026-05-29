@@ -20,9 +20,12 @@ import { CURRICULUM, Exercise, Lesson } from '../services/curriculumData';
 import { useUserStore } from '../stores/useUserStore';
 import { useProgressStore } from '../stores/useProgressStore';
 import { isFuzzyMatch, generateWordDiff, DiffWord } from '../services/diff';
+import { getDB } from '../services/srs';
+import { getGrammarExplanation, GrammarExplanation } from '../services/gemini';
 import { getLevelInfo } from '../services/levelSystem';
 import LottieView from 'lottie-react-native';
 import PeacockMascot, { MascotState } from '../components/PeacockMascot';
+import { trackEvent, EVENTS } from '../services/analytics';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -52,6 +55,7 @@ export default function LessonScreen() {
   const [isAnswerChecked, setIsAnswerChecked] = useState(false);
   const [isAnswerCorrect, setIsAnswerCorrect] = useState(false);
   const [score, setScore] = useState(0);
+  const [correctStreak, setCorrectStreak] = useState(0);
   const [showCelebration, setShowCelebration] = useState(false);
   const [wordDiffResults, setWordDiffResults] = useState<DiffWord[]>([]);
   const [earnedXp, setEarnedXp] = useState(0);
@@ -64,6 +68,12 @@ export default function LessonScreen() {
   const [mascotState, setMascotState] = useState<MascotState>('idle');
   const [timeTaken, setTimeTaken] = useState(0); // seconds
   const lessonStartTime = useRef<number>(Date.now());
+
+  // L3-9: Grammar Explainer state
+  const [showGrammarModal, setShowGrammarModal] = useState(false);
+  const [grammarExplanation, setGrammarExplanation] = useState<GrammarExplanation | null>(null);
+  const [grammarLoading, setGrammarLoading] = useState(false);
+  const [grammarError, setGrammarError] = useState<string | null>(null);
 
   // Match the pairs state
   const [shuffledOdia, setShuffledOdia] = useState<{ id: string; text: string }[]>([]);
@@ -137,6 +147,11 @@ export default function LessonScreen() {
     // Start lesson timer
     lessonStartTime.current = Date.now();
     setLoading(false);
+
+    // Analytics: lesson started
+    if (foundLesson) {
+      trackEvent(EVENTS.LESSON_STARTED, { lessonId, lessonTitle: foundLesson.title }).catch(console.error);
+    }
   }, [lessonId]);
 
   // Handle TTS and reset of response states when current exercise changes
@@ -236,6 +251,15 @@ export default function LessonScreen() {
       
       setTotalXp(newXp);
       await userStore.addXp(amount, 'Lesson completion / progress');
+
+      // Analytics: lesson completed (fired once on first XP gain at lesson end)
+      if (amount >= 20) {
+        trackEvent(EVENTS.LESSON_COMPLETED, {
+          lessonId,
+          xpEarned: amount,
+          durationSeconds: Math.round((Date.now() - lessonStartTime.current) / 1000),
+        }).catch(console.error);
+      }
       
       if (newInfo.level > oldInfo.level) {
         setLevelUpInfo({ oldLevel: oldInfo.level, newLevel: newInfo.level });
@@ -293,17 +317,73 @@ export default function LessonScreen() {
     setIsAnswerChecked(true);
     setMascotState(correct ? 'happy' : 'sad');
 
+    // Analytics: exercise outcome
     if (correct) {
+      trackEvent(EVENTS.EXERCISE_CORRECT, {
+        lessonId,
+        exerciseType: currentExercise.type,
+      }).catch(console.error);
+    } else {
+      trackEvent(EVENTS.EXERCISE_WRONG, {
+        lessonId,
+        exerciseType: currentExercise.type,
+      }).catch(console.error);
+    }
+
+    // Log attempt to exercise_attempts table
+    try {
+      const db = getDB();
+      await db.runAsync(
+        'INSERT INTO exercise_attempts (lesson_id, exercise_type, is_correct, timestamp) VALUES (?, ?, ?, ?);',
+        [lesson.id, currentExercise.type, correct ? 1 : 0, Date.now()]
+      );
+    } catch (e) {
+      console.error('Failed to log exercise attempt to SQLite:', e);
+    }
+
+    if (correct) {
+      const nextStreak = correctStreak + 1;
+      setCorrectStreak(nextStreak);
+      if (nextStreak === 3) {
+        try {
+          const { useChallengeStore } = require('../stores/useChallengeStore');
+          useChallengeStore.getState().incrementProgress('streak_exercises', 1).catch(console.error);
+        } catch (err) {
+          console.warn('Failed to update daily challenge progress:', err);
+        }
+      }
       setScore((prev) => prev + 1);
       // Award +10 XP immediately
       const newEarned = earnedXp + 10;
       setEarnedXp(newEarned);
       await updateXpAndLevel(10);
     } else {
+      setCorrectStreak(0);
       if (currentExercise.type === 'translate_sentence' || currentExercise.type === 'listen_type') {
         const diff = generateWordDiff(textInputValue, currentExercise.correctAnswer);
         setWordDiffResults(diff);
       }
+
+      // Log incorrect answer to SQLite mistake_log
+      try {
+        const db = getDB();
+        const userAnswerText =
+          (currentExercise.type === 'multiple_choice_en_to_or' ||
+           currentExercise.type === 'multiple_choice_or_to_en' ||
+           currentExercise.type === 'listening')
+            ? selectedOption || ''
+            : currentExercise.type === 'word_jumble'
+            ? selectedJumbleWords.join(' ')
+            : textInputValue;
+
+        await db.runAsync(
+          'INSERT INTO mistake_log (lesson_id, question, correct_answer, user_answer, timestamp) VALUES (?, ?, ?, ?, ?);',
+          [lesson.id, currentExercise.prompt, currentExercise.correctAnswer, userAnswerText, Date.now()]
+        );
+      } catch (e) {
+        console.error('Failed to log mistake to SQLite:', e);
+      }
+
       // Deduct a heart
       const newHearts = await useUserStore.getState().deductHeart();
       setHearts(newHearts);
@@ -340,6 +420,59 @@ export default function LessonScreen() {
       setShowCelebration(true);
       setMascotState('celebrate');
       setTimeTaken(Math.round((Date.now() - lessonStartTime.current) / 1000));
+    }
+  };
+
+  // L3-9: AI Grammar Explainer handler
+  const handleExplainThis = async () => {
+    setGrammarExplanation(null);
+    setGrammarError(null);
+    setGrammarLoading(true);
+    setShowGrammarModal(true);
+
+    // Determine the user's answer string for the current exercise
+    const userAnswerText =
+      (currentExercise.type === 'multiple_choice_en_to_or' ||
+       currentExercise.type === 'multiple_choice_or_to_en' ||
+       currentExercise.type === 'listening')
+        ? selectedOption || ''
+        : currentExercise.type === 'word_jumble'
+        ? selectedJumbleWords.join(' ')
+        : textInputValue;
+
+    try {
+      const result = await getGrammarExplanation(
+        currentExercise.prompt,
+        currentExercise.correctAnswer,
+        userAnswerText
+      );
+      setGrammarExplanation(result);
+
+      // Persist to SQLite for L3-6 personalization
+      try {
+        const db = getDB();
+        await db.runAsync(
+          `INSERT INTO grammar_explanations
+            (lesson_id, question, correct_answer, user_answer, explanation, odia_example, tip, viewed_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
+          [
+            lesson!.id,
+            currentExercise.prompt,
+            currentExercise.correctAnswer,
+            userAnswerText,
+            result.explanation,
+            result.odiaExample,
+            result.tip,
+            Date.now(),
+          ]
+        );
+      } catch (dbErr) {
+        console.error('Failed to save grammar explanation to SQLite:', dbErr);
+      }
+    } catch (err: any) {
+      setGrammarError(err?.message || 'Could not load explanation. Try again.');
+    } finally {
+      setGrammarLoading(false);
     }
   };
 
@@ -1148,6 +1281,18 @@ export default function LessonScreen() {
                 </RNView>
               )}
             </RNView>
+
+            {/* L3-9: Explain This button — only shown on wrong answers for supported types */}
+            {!isAnswerCorrect && currentExercise.type !== 'match_pairs' && (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={handleExplainThis}
+                style={[styles.explainBtn, { borderColor: '#6366F1' }]}
+              >
+                <Text style={[styles.explainBtnText, { color: '#6366F1' }]}>Explain This 🤔</Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
               onPress={handleContinue}
               style={[
@@ -1269,6 +1414,108 @@ export default function LessonScreen() {
             >
               <Text style={styles.levelUpButtonText}>Quit Lesson</Text>
             </TouchableOpacity>
+          </RNView>
+        </RNView>
+      </Modal>
+
+      {/* L3-9: AI Grammar Explainer Bottom Sheet Modal */}
+      <Modal
+        visible={showGrammarModal}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={() => setShowGrammarModal(false)}
+      >
+        <RNView style={styles.grammarOverlay}>
+          <TouchableOpacity
+            style={styles.grammarDismissArea}
+            activeOpacity={1}
+            onPress={() => setShowGrammarModal(false)}
+          />
+          <RNView style={styles.grammarSheet}>
+            {/* Handle bar */}
+            <RNView style={styles.grammarHandleBar} />
+
+            {/* Header */}
+            <RNView style={styles.grammarHeader}>
+              <RNView style={styles.grammarIconBadge}>
+                <Text style={styles.grammarIconEmoji}>🧠</Text>
+              </RNView>
+              <RNView style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.grammarTitle}>AI Grammar Explainer</Text>
+                <Text style={styles.grammarSubtitle}>Personalized just for you</Text>
+              </RNView>
+              <TouchableOpacity onPress={() => setShowGrammarModal(false)} style={styles.grammarCloseBtn}>
+                <Text style={styles.grammarCloseBtnText}>✕</Text>
+              </TouchableOpacity>
+            </RNView>
+
+            {/* Question recap */}
+            <RNView style={styles.grammarRecap}>
+              <Text style={styles.grammarRecapLabel}>The correct answer was:</Text>
+              <Text style={styles.grammarRecapAnswer}>{currentExercise?.correctAnswer}</Text>
+            </RNView>
+
+            {grammarLoading ? (
+              <RNView style={styles.grammarLoadingContainer}>
+                <Text style={styles.grammarLoadingEmoji}>✨</Text>
+                <Text style={styles.grammarLoadingText}>Gemini AI is thinking...</Text>
+                <Text style={styles.grammarLoadingSubtext}>Crafting a personalised explanation for you</Text>
+              </RNView>
+            ) : grammarError ? (
+              <RNView style={styles.grammarErrorContainer}>
+                <Text style={styles.grammarErrorEmoji}>⚠️</Text>
+                <Text style={styles.grammarErrorText}>{grammarError}</Text>
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  onPress={handleExplainThis}
+                  style={styles.grammarRetryBtn}
+                >
+                  <Text style={styles.grammarRetryBtnText}>Try Again</Text>
+                </TouchableOpacity>
+              </RNView>
+            ) : grammarExplanation ? (
+              <ScrollView showsVerticalScrollIndicator={false} style={styles.grammarScrollArea}>
+                {/* Card 1: The Rule */}
+                <RNView style={[styles.grammarCard, styles.grammarCardRule]}>
+                  <RNView style={styles.grammarCardIconRow}>
+                    <Text style={styles.grammarCardEmoji}>📖</Text>
+                    <Text style={styles.grammarCardLabel}>The Rule</Text>
+                  </RNView>
+                  <Text style={styles.grammarCardText}>{grammarExplanation.explanation}</Text>
+                </RNView>
+
+                {/* Card 2: Odia Cultural Example */}
+                <RNView style={[styles.grammarCard, styles.grammarCardOdia]}>
+                  <RNView style={styles.grammarCardIconRow}>
+                    <Text style={styles.grammarCardEmoji}>🏮</Text>
+                    <Text style={styles.grammarCardLabel}>Odia Example</Text>
+                  </RNView>
+                  <Text style={styles.grammarCardText}>{grammarExplanation.odiaExample}</Text>
+                </RNView>
+
+                {/* Card 3: Memory Tip */}
+                <RNView style={[styles.grammarCard, styles.grammarCardTip]}>
+                  <RNView style={styles.grammarCardIconRow}>
+                    <Text style={styles.grammarCardEmoji}>💡</Text>
+                    <Text style={styles.grammarCardLabel}>Memory Tip</Text>
+                  </RNView>
+                  <Text style={styles.grammarCardText}>{grammarExplanation.tip}</Text>
+                </RNView>
+
+                <RNView style={{ height: 16 }} />
+              </ScrollView>
+            ) : null}
+
+            {/* Got it button */}
+            {!grammarLoading && (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={() => setShowGrammarModal(false)}
+                style={styles.grammarGotItBtn}
+              >
+                <Text style={styles.grammarGotItBtnText}>Got it! ✅</Text>
+              </TouchableOpacity>
+            )}
           </RNView>
         </RNView>
       </Modal>
@@ -1946,4 +2193,220 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginHorizontal: 1,
   },
+
+  // ─── L3-9: Explain This button ───────────────────────────────────────────
+  explainBtn: {
+    borderWidth: 1.5,
+    borderRadius: Theme.borderRadius.round,
+    paddingVertical: 10,
+    paddingHorizontal: Theme.spacing.lg,
+    alignItems: 'center',
+    marginTop: Theme.spacing.sm,
+    marginBottom: 4,
+    backgroundColor: '#6366F108',
+  },
+  explainBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+
+  // ─── L3-9: Grammar Explanation Modal ─────────────────────────────────────
+  grammarOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  grammarDismissArea: {
+    flex: 1,
+  },
+  grammarSheet: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingTop: 12,
+    paddingBottom: 36,
+    paddingHorizontal: 20,
+    maxHeight: '85%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    elevation: 20,
+  },
+  grammarHandleBar: {
+    width: 44,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#D1D5DB',
+    alignSelf: 'center',
+    marginBottom: 18,
+  },
+  grammarHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  grammarIconBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 16,
+    backgroundColor: '#6366F115',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  grammarIconEmoji: {
+    fontSize: 24,
+  },
+  grammarTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#1F2937',
+    letterSpacing: 0.2,
+  },
+  grammarSubtitle: {
+    fontSize: 12,
+    color: '#6366F1',
+    fontWeight: '600',
+    marginTop: 1,
+  },
+  grammarCloseBtn: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+  },
+  grammarCloseBtnText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#9CA3AF',
+  },
+  grammarRecap: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    borderLeftWidth: 3,
+    borderLeftColor: '#6366F1',
+  },
+  grammarRecapLabel: {
+    fontSize: 11,
+    color: '#9CA3AF',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+  grammarRecapAnswer: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  grammarScrollArea: {
+    flexGrow: 0,
+    marginBottom: 8,
+  },
+  grammarCard: {
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+  },
+  grammarCardRule: {
+    backgroundColor: '#6366F108',
+    borderColor: '#6366F130',
+  },
+  grammarCardOdia: {
+    backgroundColor: '#F59E0B08',
+    borderColor: '#F59E0B30',
+  },
+  grammarCardTip: {
+    backgroundColor: '#10B98108',
+    borderColor: '#10B98130',
+  },
+  grammarCardIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  grammarCardEmoji: {
+    fontSize: 18,
+    marginRight: 8,
+  },
+  grammarCardLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  grammarCardText: {
+    fontSize: 14,
+    color: '#1F2937',
+    lineHeight: 22,
+    fontWeight: '500',
+  },
+  grammarLoadingContainer: {
+    alignItems: 'center',
+    paddingVertical: 36,
+  },
+  grammarLoadingEmoji: {
+    fontSize: 40,
+    marginBottom: 12,
+  },
+  grammarLoadingText: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1F2937',
+    marginBottom: 6,
+  },
+  grammarLoadingSubtext: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    textAlign: 'center',
+  },
+  grammarErrorContainer: {
+    alignItems: 'center',
+    paddingVertical: 28,
+  },
+  grammarErrorEmoji: {
+    fontSize: 36,
+    marginBottom: 10,
+  },
+  grammarErrorText: {
+    fontSize: 14,
+    color: '#EF4444',
+    textAlign: 'center',
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  grammarRetryBtn: {
+    backgroundColor: '#6366F1',
+    paddingVertical: 10,
+    paddingHorizontal: 28,
+    borderRadius: 20,
+  },
+  grammarRetryBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  grammarGotItBtn: {
+    backgroundColor: '#6366F1',
+    borderRadius: Theme.borderRadius.round,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 6,
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 6,
+  },
+  grammarGotItBtnText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
 });
+

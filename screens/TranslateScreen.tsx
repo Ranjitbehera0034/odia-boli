@@ -19,6 +19,7 @@ import { OdiaTextInput } from '../components/OdiaTextInput';
 import * as Speech from 'expo-speech';
 import { useUserStore } from '../stores/useUserStore';
 import { useProgressStore } from '../stores/useProgressStore';
+import { useChallengeStore } from '../stores/useChallengeStore';
 
 interface WordInfo {
   word: string;
@@ -170,6 +171,8 @@ export default function TranslateScreen() {
       await saveTranslationToCache(inputText, result);
       // Log successful translation to history
       await addTranslationToHistory(inputText, result.translation);
+      // Daily challenge progress
+      useChallengeStore.getState().incrementProgress('translate_sentence', 1).catch(console.error);
     } catch (err: any) {
       // Fallback to cache if Gemini fails
       try {

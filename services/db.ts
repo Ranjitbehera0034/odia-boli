@@ -21,14 +21,28 @@ export async function initAppDatabase(): Promise<void> {
       freeze_used_dates TEXT NOT NULL DEFAULT '[]',
       onboarding_completed INTEGER NOT NULL DEFAULT 0,
       quizzes_taken INTEGER NOT NULL DEFAULT 0,
-      quiz_high_score INTEGER NOT NULL DEFAULT 0
+      quiz_high_score INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL DEFAULT 0,
+      username TEXT,
+      email TEXT,
+      avatar_url TEXT,
+      bio TEXT,
+      location TEXT,
+      native_language TEXT,
+      learning_goal TEXT,
+      longest_streak INTEGER DEFAULT 0,
+      is_public INTEGER DEFAULT 1,
+      badges TEXT DEFAULT '[]',
+      interests TEXT,
+      created_at INTEGER,
+      gems INTEGER NOT NULL DEFAULT 0
     );
   `);
 
   // Seed default user if not exists
   await db.runAsync(`
-    INSERT OR IGNORE INTO users (id, xp, level, hearts, last_refill_time, streak, streak_freeze_count, was_streak_broken, last_active_date, activity_dates, freeze_used_dates, onboarding_completed, quizzes_taken, quiz_high_score)
-    VALUES (1, 0, 1, 5, 0, 0, 0, 0, NULL, '[]', '[]', 0, 0, 0);
+    INSERT OR IGNORE INTO users (id, xp, level, hearts, last_refill_time, streak, streak_freeze_count, was_streak_broken, last_active_date, activity_dates, freeze_used_dates, onboarding_completed, quizzes_taken, quiz_high_score, gems)
+    VALUES (1, 0, 1, 5, 0, 0, 0, 0, NULL, '[]', '[]', 0, 0, 0, 0);
   `);
 
   // 2. lessons table
@@ -62,7 +76,8 @@ export async function initAppDatabase(): Promise<void> {
       unit_id INTEGER NOT NULL,
       is_completed INTEGER NOT NULL DEFAULT 0,
       score INTEGER NOT NULL DEFAULT 0,
-      completed_at INTEGER
+      completed_at INTEGER,
+      updated_at INTEGER NOT NULL DEFAULT 0
     );
   `);
 
@@ -95,7 +110,8 @@ export async function initAppDatabase(): Promise<void> {
       is_learned INTEGER NOT NULL DEFAULT 0,
       is_saved INTEGER NOT NULL DEFAULT 0,
       saved_at INTEGER,
-      learned_at INTEGER
+      learned_at INTEGER,
+      updated_at INTEGER NOT NULL DEFAULT 0
     );
   `);
 
@@ -181,6 +197,217 @@ export async function initAppDatabase(): Promise<void> {
       timestamp INTEGER NOT NULL
     );
   `);
+
+  // 10. mistake_log table
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS mistake_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lesson_id TEXT NOT NULL,
+      question TEXT NOT NULL,
+      correct_answer TEXT NOT NULL,
+      user_answer TEXT NOT NULL,
+      timestamp INTEGER NOT NULL
+    );
+  `);
+
+  // 11. pronunciation_scores table
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS pronunciation_scores (
+      word TEXT PRIMARY KEY,
+      score INTEGER NOT NULL,
+      feedback TEXT,
+      updated_at INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+
+  // 12. generated_sentences table
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS generated_sentences (
+      id TEXT PRIMARY KEY,
+      text TEXT NOT NULL,
+      focus TEXT,
+      odia TEXT NOT NULL,
+      difficulty TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    );
+  `);
+
+  // 13. grammar_explanations table — tracks which explanations were viewed (feeds L3-6 personalization)
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS grammar_explanations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lesson_id TEXT NOT NULL,
+      question TEXT NOT NULL,
+      correct_answer TEXT NOT NULL,
+      user_answer TEXT NOT NULL,
+      explanation TEXT NOT NULL,
+      odia_example TEXT NOT NULL,
+      tip TEXT NOT NULL,
+      viewed_at INTEGER NOT NULL
+    );
+  `);
+
+
+
+  // Run dynamic schema migrations to add updated_at columns if upgrading from a previous version
+  try {
+    await db.execAsync('ALTER TABLE users ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;');
+  } catch (e) {
+    // Column already exists, ignore
+  }
+
+  try {
+    await db.execAsync('ALTER TABLE progress ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;');
+  } catch (e) {
+    // Column already exists, ignore
+  }
+
+  try {
+    await db.execAsync('ALTER TABLE vocabulary ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;');
+  } catch (e) {
+    // Column already exists, ignore
+  }
+
+  // Profile fields migrations
+  const newCols = [
+    { name: 'username', type: 'TEXT' },
+    { name: 'email', type: 'TEXT' },
+    { name: 'avatar_url', type: 'TEXT' },
+    { name: 'bio', type: 'TEXT' },
+    { name: 'location', type: 'TEXT' },
+    { name: 'native_language', type: 'TEXT' },
+    { name: 'learning_goal', type: 'TEXT' },
+    { name: 'longest_streak', type: 'INTEGER DEFAULT 0' },
+    { name: 'is_public', type: 'INTEGER DEFAULT 1' },
+    { name: 'badges', type: "TEXT DEFAULT '[]'" },
+    { name: 'interests', type: 'TEXT' },
+    { name: 'created_at', type: 'INTEGER' },
+    { name: 'gems', type: 'INTEGER NOT NULL DEFAULT 0' }
+  ];
+
+  for (const col of newCols) {
+    try {
+      await db.execAsync(`ALTER TABLE users ADD COLUMN ${col.name} ${col.type};`);
+    } catch (e) {
+      // Column already exists, ignore
+    }
+  }
+
+  // 9.1. Create exercise_attempts table
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS exercise_attempts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      lesson_id TEXT NOT NULL,
+      exercise_type TEXT NOT NULL,
+      is_correct INTEGER NOT NULL,
+      timestamp INTEGER NOT NULL
+    );
+  `);
+
+  // 9.3. Create daily_challenges table
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS daily_challenges (
+      id TEXT PRIMARY KEY,
+      description TEXT NOT NULL,
+      type TEXT NOT NULL,
+      target_count INTEGER NOT NULL,
+      current_progress INTEGER NOT NULL DEFAULT 0,
+      is_completed INTEGER NOT NULL DEFAULT 0,
+      reward_xp INTEGER NOT NULL,
+      reward_gems INTEGER NOT NULL,
+      date TEXT NOT NULL
+    );
+  `);
+
+  // 9.4. Create daily_chest_claimed table
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS daily_chest_claimed (
+      date TEXT PRIMARY KEY,
+      is_claimed INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+
+  // 9.2. Seed mock exercise attempts and XP logs if initially empty
+  try {
+    const attemptsCountRow = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM exercise_attempts;');
+    if (attemptsCountRow && attemptsCountRow.count === 0) {
+      console.log('[SQLite Seed] Seeding mock analytics data for charts...');
+      const now = Date.now();
+      const oneDay = 24 * 60 * 60 * 1000;
+      const exerciseTypes = [
+        'multiple_choice_en_to_or',
+        'multiple_choice_or_to_en',
+        'listening',
+        'word_jumble',
+        'text_input',
+        'translate_sentence',
+        'listen_type',
+        'match_pairs'
+      ];
+
+      // Seed data spread across the last 8 weeks (56 days)
+      for (let dayOffset = 56; dayOffset >= 0; dayOffset--) {
+        const dayTimestamp = now - dayOffset * oneDay;
+        const dayOfWeek = new Date(dayTimestamp).getDay();
+        
+        // Sunday, Monday, Wednesday, Friday are set as active study days
+        const practiceProb = [0, 1, 3, 5].includes(dayOfWeek) ? 0.8 : 0.35;
+        if (Math.random() < practiceProb) {
+          // Choose standard practice times (usually evening 7-9 PM or morning 8-10 AM)
+          const hour = Math.random() < 0.7 ? 19 + Math.floor(Math.random() * 2) : 8 + Math.floor(Math.random() * 2);
+          const practiceTime = new Date(dayTimestamp);
+          practiceTime.setHours(hour, Math.floor(Math.random() * 60), 0, 0);
+          const practiceTimestamp = practiceTime.getTime();
+
+          // 1. Insert XP log entry
+          const xpAmount = Math.random() < 0.3 ? 50 : 30; // 30 XP or 50 XP
+          await db.runAsync(
+            'INSERT INTO xp_log (amount, source, timestamp) VALUES (?, ?, ?);',
+            [xpAmount, 'Lesson completion', practiceTimestamp]
+          );
+
+          // 2. Insert mock exercise attempts (8-11 exercises per lesson session)
+          const totalExercises = 8 + Math.floor(Math.random() * 4);
+          for (let i = 0; i < totalExercises; i++) {
+            const type = exerciseTypes[Math.floor(Math.random() * exerciseTypes.length)];
+            
+            // Higher accuracy on multiple choice, lower on translation / text entry
+            let accuracy = 0.82;
+            if (['translate_sentence', 'text_input', 'listen_type'].includes(type)) {
+              accuracy = 0.65;
+            } else if (['listening', 'multiple_choice_or_to_en'].includes(type)) {
+              accuracy = 0.90;
+            }
+            
+            const isCorrect = Math.random() < accuracy ? 1 : 0;
+            await db.runAsync(
+              'INSERT INTO exercise_attempts (lesson_id, exercise_type, is_correct, timestamp) VALUES (?, ?, ?, ?);',
+              ['mock_lesson', type, isCorrect, practiceTimestamp]
+            );
+          }
+        }
+      }
+
+      // 3. Mark some vocabulary words as learned historically
+      const learnedCountRow = await db.getFirstAsync<{ count: number }>(
+        "SELECT COUNT(*) as count FROM vocabulary WHERE is_learned = 1;"
+      );
+      if (learnedCountRow && learnedCountRow.count === 0) {
+        const vocabItems = await db.getAllAsync<any>('SELECT id FROM vocabulary LIMIT 25;');
+        for (const item of vocabItems) {
+          const dayOffset = Math.floor(Math.random() * 30);
+          const learnedAt = now - dayOffset * oneDay;
+          await db.runAsync(
+            'UPDATE vocabulary SET is_learned = 1, learned_at = ? WHERE id = ?;',
+            [learnedAt, item.id]
+          );
+        }
+      }
+      console.log('[SQLite Seed] Seeding completed.');
+    }
+  } catch (seedErr) {
+    console.error('[SQLite Seed] Failed to seed mock analytics:', seedErr);
+  }
 
   // 10. Run AsyncStorage to SQLite migration if needed
   await runAsyncStorageMigration();
