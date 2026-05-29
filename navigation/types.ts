@@ -7,7 +7,7 @@ export type MainTabParamList = {
   Translate: undefined;
   Practice: undefined;
   League: undefined;
-  Settings: undefined;
+  Profile: undefined;
 };
 
 export type RootStackParamList = {
@@ -19,7 +19,21 @@ export type RootStackParamList = {
   Onboarding: undefined;
   Curriculum: undefined;
   Lesson: { lessonId: string };
+  Welcome: undefined;
+  Login: undefined;
+  Signup: undefined;
+  ForgotPassword: undefined;
+  EmailVerify: { email: string };
+  Settings: undefined;
+  AiChat: undefined;
+  PronunciationCoach: undefined;
+  Friends: undefined;
+  Challenge: { challengeId: string };
+  MyProgress: undefined;
+  StreakSociety: undefined;
 };
+
+
 
 export type HomeScreenNavigationProp = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, 'Home'>,
@@ -41,8 +55,13 @@ export type LeagueScreenNavigationProp = CompositeNavigationProp<
   NativeStackNavigationProp<RootStackParamList>
 >;
 
-export type SettingsScreenNavigationProp = CompositeNavigationProp<
-  BottomTabNavigationProp<MainTabParamList, 'Settings'>,
+export type SettingsScreenNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'Settings'
+>;
+
+export type ProfileScreenNavigationProp = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList, 'Profile'>,
   NativeStackNavigationProp<RootStackParamList>
 >;
 
@@ -50,3 +69,15 @@ export type DetailsScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
   'Details'
 >;
+
+export type FriendsScreenNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'Friends'
+>;
+
+export type ChallengeScreenNavigationProp = NativeStackNavigationProp<
+  RootStackParamList,
+  'Challenge'
+>;
+
+

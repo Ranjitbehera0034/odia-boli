@@ -1,0 +1,19 @@
+# Supabase project configuration for Odia Agent
+# Run: npx supabase@latest functions deploy --project-ref rlugmockbltcqgguadzb
+
+project_id = "rlugmockbltcqgguadzb"
+
+[functions.league-reset]
+verify_jwt = false
+
+[functions.daily-challenges]
+verify_jwt = false
+
+[functions.xp-fraud-detection]
+verify_jwt = false
+
+[functions.push-dispatch]
+verify_jwt = true
+
+[functions.challenge-resolution]
+verify_jwt = false

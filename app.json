@@ -2,6 +2,7 @@
   "expo": {
     "name": "odia-agent",
     "slug": "odia-agent",
+    "scheme": "odia-agent",
     "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -46,7 +47,9 @@
       "expo-splash-screen",
       "expo-dev-client",
       "expo-sqlite",
-      "expo-updates"
+      "expo-updates",
+      "expo-secure-store",
+      "expo-apple-authentication"
     ],
     "extra": {
       "eas": {
