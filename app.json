@@ -3,7 +3,7 @@
     "name": "odia-agent",
     "slug": "odia-agent",
     "scheme": "odia-agent",
-    "version": "2.0.0",
+    "version": "3.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "runtimeVersion": {
@@ -24,7 +24,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.yourname.odiaenglish",
-      "buildNumber": "2.0.0",
+      "buildNumber": "3.0.0",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "This app requires microphone access to record Odia phrases for speech translation features."
       }
@@ -35,7 +35,7 @@
         "foregroundImage": "./assets/icon.png"
       },
       "package": "com.yourname.odiaenglish",
-      "versionCode": 2,
+      "versionCode": 3,
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ]
